@@ -414,7 +414,7 @@ async def handle_comment_event(value: dict, accounts: list):
 
 
 async def handle_message_event(event: dict, accounts: list):
-    """DM eventini ishlov berish (kelgan xabarlar)"""
+    """DM eventini ishlov berish — DM trigger logikasi"""
     sender = event.get("sender", {})
     sender_id = sender.get("id")
     message = event.get("message", {})
@@ -424,7 +424,36 @@ async def handle_message_event(event: dict, accounts: list):
         return
 
     print(f"📩 DM keldi: '{message_text}' from {sender_id}")
-    # Kelajakda: auto-reply to DM logic bu yerga qo'shiladi
+
+    # Barcha aktiv akkauntlarda DM triggerini qidirish
+    for account in accounts:
+        if not account.get("is_active"):
+            continue
+
+        trigger = await find_matching_trigger(account["id"], message_text)
+        if not trigger:
+            continue
+
+        print(f"✅ DM trigger topildi: '{trigger['keyword']}' → javob yuborilmoqda...")
+
+        # Subscriber saqlash/yangilash
+        sub_id = await upsert_subscriber(account["id"], sender_id)
+
+        # DM javob yuborish
+        result = await send_dm(sender_id, trigger["reply_message"], account["page_access_token"])
+
+        # Log saqlash
+        status = "sent" if "message_id" in result or "recipient_id" in result else "failed"
+        await log_message(
+            account_id=account["id"],
+            subscriber_id=sub_id,
+            trigger_id=trigger["id"],
+            post_id="dm",
+            comment_text=message_text,
+            sent_message=trigger["reply_message"],
+            status=status
+        )
+        break
 
 
 # ════════════════════════════════════════════════
