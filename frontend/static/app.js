@@ -117,17 +117,36 @@ function toggleSidebar() {
   document.querySelector('.sidebar').classList.toggle('open');
 }
 
+// ──────────── COUNT-UP ANIMATION ────────────
+
+function animateCount(el, target, duration = 800) {
+  const start = parseInt(el.textContent) || 0;
+  if (start === target) return;
+  const range = target - start;
+  const startTime = performance.now();
+  function update(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    // easeOutQuart
+    const ease = 1 - Math.pow(1 - progress, 4);
+    el.textContent = Math.round(start + range * ease);
+    if (progress < 1) requestAnimationFrame(update);
+    else el.textContent = target;
+  }
+  requestAnimationFrame(update);
+}
+
 // ──────────── STATS ────────────
 
 async function loadStats() {
   try {
     const s = await api('GET', '/api/stats');
-    document.getElementById('stat-accounts').textContent = s.total_accounts;
-    document.getElementById('stat-triggers').textContent = s.total_triggers;
-    document.getElementById('stat-subscribers').textContent = s.total_subscribers;
-    document.getElementById('stat-messages').textContent = s.total_messages;
-    document.getElementById('stat-today').textContent = s.today_messages;
-    document.getElementById('stat-posts').textContent = s.total_posts;
+    animateCount(document.getElementById('stat-accounts'),    s.total_accounts,    600);
+    animateCount(document.getElementById('stat-triggers'),    s.total_triggers,    700);
+    animateCount(document.getElementById('stat-subscribers'), s.total_subscribers, 800);
+    animateCount(document.getElementById('stat-messages'),    s.total_messages,    900);
+    animateCount(document.getElementById('stat-today'),       s.today_messages,    500);
+    animateCount(document.getElementById('stat-posts'),       s.total_posts,       650);
   } catch (e) {
     console.error('Stats xatosi:', e);
   }
@@ -159,13 +178,29 @@ async function loadRecentMessages() {
 
 // ──────────── ACCOUNTS ────────────
 
+function showSkeleton(id, rows = 3) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = Array.from({ length: rows }, () =>
+    `<div style="padding:14px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:12px;align-items:center">
+      <div class="skeleton" style="width:80px;height:30px;border-radius:20px"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div class="skeleton" style="height:14px;width:60%"></div>
+        <div class="skeleton" style="height:11px;width:40%"></div>
+      </div>
+      <div class="skeleton" style="width:60px;height:24px;border-radius:12px"></div>
+    </div>`
+  ).join('');
+}
+
 async function loadAccounts() {
+  showSkeleton('accountsList', 2);
   try {
     accounts = await api('GET', '/api/accounts');
     renderAccounts();
     populateAccountSelects();
   } catch (e) {
-    document.getElementById('accountsList').innerHTML = '<div class="empty">Yuklanmadi</div>';
+    document.getElementById('accountsList').innerHTML = '<div class="empty"><i class="fas fa-exclamation-triangle"></i>Yuklanmadi</div>';
   }
 }
 
@@ -255,13 +290,14 @@ async function deleteAccount(id) {
 // ──────────── TRIGGERS ────────────
 
 async function loadTriggers() {
+  showSkeleton('triggersList', 3);
   const accountId = document.getElementById('triggerAccountFilter')?.value;
   const url = accountId ? `/api/triggers?account_id=${accountId}` : '/api/triggers';
   try {
     const triggers = await api('GET', url);
     renderTriggers(triggers);
   } catch (e) {
-    document.getElementById('triggersList').innerHTML = '<div class="empty">Yuklanmadi</div>';
+    document.getElementById('triggersList').innerHTML = '<div class="empty"><i class="fas fa-bolt"></i>Yuklanmadi</div>';
   }
 }
 
@@ -618,10 +654,14 @@ document.addEventListener('click', e => {
 
 function toast(msg, type = 'info') {
   const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `toast ${type} show`;
+  const icons = { success: 'fa-check-circle', error: 'fa-times-circle', info: 'fa-info-circle' };
+  el.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${msg}</span>`;
+  el.className = `toast ${type}`;
+  // force reflow for re-animation
+  void el.offsetWidth;
+  el.classList.add('show');
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.remove('show'), 3000);
+  el._t = setTimeout(() => el.classList.remove('show'), 3500);
 }
 
 // ──────────── HELPERS ────────────

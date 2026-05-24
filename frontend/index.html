@@ -3,11 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Instagram Chatbot — Admin Panel</title>
+  <title>InstaBot — Admin Panel</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+
+<!-- Animated background orbs -->
+<div class="bg-orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
 
 <!-- LOGIN -->
 <div id="loginScreen" class="login-screen">
@@ -39,28 +46,28 @@
     </div>
     <nav>
       <a href="#" class="nav-item active" onclick="showPage('dashboard')">
-        <i class="fas fa-chart-pie"></i> Dashboard
+        <i class="fas fa-chart-pie"></i><span>Dashboard</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('accounts')">
-        <i class="fas fa-user-circle"></i> Akkauntlar
+        <i class="fas fa-user-circle"></i><span>Akkauntlar</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('triggers')">
-        <i class="fas fa-bolt"></i> Triggerlar
+        <i class="fas fa-bolt"></i><span>Triggerlar</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('posts')">
-        <i class="fas fa-image"></i> Postlar
+        <i class="fas fa-image"></i><span>Postlar</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('subscribers')">
-        <i class="fas fa-users"></i> Obunachlar
+        <i class="fas fa-users"></i><span>Obunachlar</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('messages')">
-        <i class="fas fa-paper-plane"></i> Xabarlar
+        <i class="fas fa-paper-plane"></i><span>Xabarlar</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('webhook')">
-        <i class="fas fa-plug"></i> Webhook
+        <i class="fas fa-plug"></i><span>Webhook</span>
       </a>
       <a href="#" class="nav-item" onclick="showPage('testdm')">
-        <i class="fas fa-vial"></i> Test DM
+        <i class="fas fa-vial"></i><span>Test DM</span>
       </a>
     </nav>
     <div class="sidebar-footer">
