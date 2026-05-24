@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram Chatbot — Admin Panel</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <i class="fab fa-instagram"></i>
+    </div>
+    <h2>Instagram Chatbot</h2>
+    <p>Admin paneliga kirish</p>
+    <div class="input-group">
+      <i class="fas fa-lock"></i>
+      <input type="password" id="loginPassword" placeholder="Admin parol" onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <button class="btn btn-primary btn-full" onclick="login()">
+      <i class="fas fa-sign-in-alt"></i> Kirish
+    </button>
+    <div id="loginError" class="error-msg" style="display:none"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="mainApp" style="display:none">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <i class="fab fa-instagram"></i>
+      <span>InstaBot</span>
+    </div>
+    <nav>
+      <a href="#" class="nav-item active" onclick="showPage('dashboard')">
+        <i class="fas fa-chart-pie"></i> Dashboard
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('accounts')">
+        <i class="fas fa-user-circle"></i> Akkauntlar
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('triggers')">
+        <i class="fas fa-bolt"></i> Triggerlar
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('posts')">
+        <i class="fas fa-image"></i> Postlar
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('subscribers')">
+        <i class="fas fa-users"></i> Obunachlar
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('messages')">
+        <i class="fas fa-paper-plane"></i> Xabarlar
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('webhook')">
+        <i class="fas fa-plug"></i> Webhook
+      </a>
+      <a href="#" class="nav-item" onclick="showPage('testdm')">
+        <i class="fas fa-vial"></i> Test DM
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-sm btn-ghost" onclick="logout()">
+        <i class="fas fa-sign-out-alt"></i> Chiqish
+      </button>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <main class="content">
+    <div class="topbar">
+      <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+      <h1 class="page-title" id="pageTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <span class="status-dot online"></span>
+        <span id="currentTime"></span>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section id="page-dashboard" class="page active">
+      <div class="stats-grid">
+        <div class="stat-card blue">
+          <div class="stat-icon"><i class="fas fa-user-circle"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-accounts">—</div>
+            <div class="stat-label">Akkauntlar</div>
+          </div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-icon"><i class="fas fa-bolt"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-triggers">—</div>
+            <div class="stat-label">Triggerlar</div>
+          </div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-icon"><i class="fas fa-users"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-subscribers">—</div>
+            <div class="stat-label">Obunachlar</div>
+          </div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-icon"><i class="fas fa-paper-plane"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-messages">—</div>
+            <div class="stat-label">Jami xabarlar</div>
+          </div>
+        </div>
+        <div class="stat-card pink">
+          <div class="stat-icon"><i class="fas fa-calendar-day"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-today">—</div>
+            <div class="stat-label">Bugungi xabarlar</div>
+          </div>
+        </div>
+        <div class="stat-card teal">
+          <div class="stat-icon"><i class="fas fa-image"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="stat-posts">—</div>
+            <div class="stat-label">Kuzatilayotgan postlar</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-clock"></i> So'nggi xabarlar</h3>
+          <button class="btn btn-sm btn-ghost" onclick="loadStats()"><i class="fas fa-sync"></i></button>
+        </div>
+        <div id="recentMessages">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-info-circle"></i> Qanday ishlaydi?</h3>
+        </div>
+        <div class="how-it-works">
+          <div class="step"><span class="step-num">1</span><div><strong>Akkaunt qo'shing</strong> — Page Access Token orqali Instagram akkauntingizni ulang</div></div>
+          <div class="step"><span class="step-num">2</span><div><strong>Trigger yarating</strong> — Kommentariya kalit so'zi va auto DM xabarini kiriting</div></div>
+          <div class="step"><span class="step-num">3</span><div><strong>Post qo'shing</strong> — Kuzatiladigan postlar URL sini kiriting</div></div>
+          <div class="step"><span class="step-num">4</span><div><strong>Webhook sozlang</strong> — Meta Developer sahifasida webhook URL ni kiriting</div></div>
+          <div class="step"><span class="step-num">5</span><div><strong>Tayyor!</strong> — Kim "+" yozsa avtomatik DM oladi 🚀</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ACCOUNTS -->
+    <section id="page-accounts" class="page">
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-user-circle"></i> Instagram Akkauntlar</h3>
+          <button class="btn btn-primary btn-sm" onclick="openModal('addAccountModal')">
+            <i class="fas fa-plus"></i> Akkaunt qo'shish
+          </button>
+        </div>
+        <div id="accountsList">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRIGGERS -->
+    <section id="page-triggers" class="page">
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-bolt"></i> Triggerlar (kalit so'z → DM)</h3>
+          <button class="btn btn-primary btn-sm" onclick="openModal('addTriggerModal')">
+            <i class="fas fa-plus"></i> Trigger qo'shish
+          </button>
+        </div>
+        <div class="filter-bar">
+          <select id="triggerAccountFilter" onchange="loadTriggers()">
+            <option value="">Barcha akkauntlar</option>
+          </select>
+        </div>
+        <div id="triggersList">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- POSTS -->
+    <section id="page-posts" class="page">
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-image"></i> Kuzatiladigan Postlar</h3>
+          <button class="btn btn-primary btn-sm" onclick="openModal('addPostModal')">
+            <i class="fas fa-plus"></i> Post qo'shish
+          </button>
+        </div>
+        <div id="postsList">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUBSCRIBERS -->
+    <section id="page-subscribers" class="page">
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-users"></i> Obunachlar</h3>
+          <span id="subscriberCount" class="badge">0</span>
+        </div>
+        <div id="subscribersList">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MESSAGES -->
+    <section id="page-messages" class="page">
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-paper-plane"></i> Yuborilgan Xabarlar Logi</h3>
+          <button class="btn btn-sm btn-ghost" onclick="loadMessages()"><i class="fas fa-sync"></i> Yangilash</button>
+        </div>
+        <div id="messagesList">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WEBHOOK -->
+    <section id="page-webhook" class="page">
+      <div class="section-card">
+        <h3><i class="fas fa-plug"></i> Webhook Sozlamalari</h3>
+        <div class="webhook-info">
+          <div class="info-row">
+            <label>Webhook URL (Meta'ga kiritish):</label>
+            <div class="copy-box">
+              <code id="webhookUrl"></code>
+              <button onclick="copyWebhook()" class="btn btn-sm btn-ghost"><i class="fas fa-copy"></i></button>
+            </div>
+          </div>
+          <div class="info-row">
+            <label>Verify Token:</label>
+            <div class="copy-box">
+              <code id="verifyToken">Serverdan olinmoqda...</code>
+              <button onclick="copyVerifyToken()" class="btn btn-sm btn-ghost"><i class="fas fa-copy"></i></button>
+            </div>
+          </div>
+        </div>
+        <div class="webhook-steps">
+          <h4>Sozlash qadamlari:</h4>
+          <ol>
+            <li>
+              <strong><a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a></strong> ga kiring
+            </li>
+            <li>App → Webhooks bo'limiga o'ting</li>
+            <li><strong>Instagram</strong> ni tanlang → Subscribe</li>
+            <li>Yuqoridagi <strong>Webhook URL</strong> va <strong>Verify Token</strong> ni kiriting</li>
+            <li><code>comments</code> va <code>messages</code> fieldlarni obuna qiling</li>
+            <li>"Verify and Save" tugmasini bosing</li>
+          </ol>
+        </div>
+        <div class="info-box warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <strong>Muhim:</strong> Webhook ishlashi uchun server internet orqali ochiq bo'lishi kerak.
+            Mahalliy test uchun <a href="https://ngrok.com" target="_blank">ngrok</a> yoki
+            <a href="https://localtunnel.me" target="_blank">localtunnel</a> foydalaning.<br>
+            <code>ngrok http 8000</code> → chiqadigan URL ni webhook sifatida ishlatish
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TEST DM -->
+    <section id="page-testdm" class="page">
+      <div class="section-card">
+        <h3><i class="fas fa-vial"></i> Test DM Yuborish</h3>
+        <p class="muted">Biror foydalanuvchiga test xabari yuborish uchun quyidagi formani to'ldiring.</p>
+        <div class="form-group">
+          <label>Akkaunt</label>
+          <select id="testDmAccount"></select>
+        </div>
+        <div class="form-group">
+          <label>Qabul qiluvchi IGSID</label>
+          <input type="text" id="testDmRecipient" placeholder="123456789012345">
+          <small>Instagram foydalanuvchisining IGSID raqami (webhook eventlarida ko'rinadi)</small>
+        </div>
+        <div class="form-group">
+          <label>Xabar matni</label>
+          <textarea id="testDmMessage" rows="4" placeholder="Salom! Bu test xabari 😊"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="sendTestDm()">
+          <i class="fas fa-paper-plane"></i> Yuborish
+        </button>
+        <div id="testDmResult" style="margin-top:15px"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ══════════════ MODALS ══════════════ -->
+
+<!-- Add Account Modal -->
+<div id="addAccountModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3><i class="fab fa-instagram"></i> Akkaunt qo'shish</h3>
+      <button onclick="closeModal('addAccountModal')" class="modal-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="info-box">
+        <i class="fas fa-info-circle"></i>
+        <div>
+          Instagram Business akkauntingiz Facebook Page ga ulangan bo'lishi kerak.
+          <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> dan
+          <code>pages_messaging, instagram_manage_messages, instagram_manage_comments</code> permissionlari bilan token oling.
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Page Access Token *</label>
+        <textarea id="newAccountToken" rows="3" placeholder="EAAxxxxxx..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('addAccountModal')">Bekor qilish</button>
+      <button class="btn btn-primary" onclick="createAccount()">
+        <i class="fas fa-plus"></i> Qo'shish
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Trigger Modal -->
+<div id="addTriggerModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3><i class="fas fa-bolt"></i> Trigger qo'shish</h3>
+      <button onclick="closeModal('addTriggerModal')" class="modal-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Akkaunt *</label>
+        <select id="newTriggerAccount"></select>
+      </div>
+      <div class="form-group">
+        <label>Kalit so'z (trigger) *</label>
+        <input type="text" id="newTriggerKeyword" placeholder="+ yoki 'manzil' yoki 'narx'">
+        <small>Kommentariyada shu so'z bo'lsa DM yuboriladi</small>
+      </div>
+      <div class="form-group">
+        <label>DM xabari *</label>
+        <textarea id="newTriggerMessage" rows="5" placeholder="Salom! 👋&#10;&#10;So'ragan ma'lumotingiz:&#10;📍 Manzil: Toshkent, Chilonzor&#10;📞 Tel: +998901234567&#10;&#10;Tez orada bog'lanamiz!"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('addTriggerModal')">Bekor qilish</button>
+      <button class="btn btn-primary" onclick="createTrigger()">
+        <i class="fas fa-bolt"></i> Trigger yaratish
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Trigger Modal -->
+<div id="editTriggerModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3><i class="fas fa-edit"></i> Trigger tahrirlash</h3>
+      <button onclick="closeModal('editTriggerModal')" class="modal-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editTriggerId">
+      <div class="form-group">
+        <label>Kalit so'z *</label>
+        <input type="text" id="editTriggerKeyword">
+      </div>
+      <div class="form-group">
+        <label>DM xabari *</label>
+        <textarea id="editTriggerMessage" rows="5"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Holat</label>
+        <select id="editTriggerActive">
+          <option value="1">✅ Faol</option>
+          <option value="0">⏸️ To'xtatilgan</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editTriggerModal')">Bekor qilish</button>
+      <button class="btn btn-primary" onclick="updateTrigger()">
+        <i class="fas fa-save"></i> Saqlash
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Post Modal -->
+<div id="addPostModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3><i class="fas fa-image"></i> Post qo'shish</h3>
+      <button onclick="closeModal('addPostModal')" class="modal-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="info-box">
+        <i class="fas fa-info-circle"></i>
+        <div>Post URL ni kiriting. Webhook to'g'ri sozlanganda ushbu postga kommentariyalar kuzatiladi.</div>
+      </div>
+      <div class="form-group">
+        <label>Akkaunt *</label>
+        <select id="newPostAccount"></select>
+      </div>
+      <div class="form-group">
+        <label>Post URL *</label>
+        <input type="text" id="newPostUrl" placeholder="https://instagram.com/p/XXXXXX/">
+      </div>
+      <div class="form-group">
+        <label>Izoh (ixtiyoriy)</label>
+        <input type="text" id="newPostCaption" placeholder="Post haqida eslatma">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('addPostModal')">Bekor qilish</button>
+      <button class="btn btn-primary" onclick="createPost()">
+        <i class="fas fa-plus"></i> Qo'shish
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
