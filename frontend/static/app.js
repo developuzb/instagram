@@ -277,16 +277,27 @@ function renderTriggers(triggers) {
   }
   el.innerHTML = triggers.map(t => {
     const acc = accounts.find(a => a.id === t.account_id);
+    const typeLabel = t.trigger_type === 'dm'
+      ? '<span class="badge badge-blue" style="font-size:11px"><i class="fas fa-envelope"></i> DM trigger</span>'
+      : '<span class="badge badge-purple" style="font-size:11px"><i class="fas fa-comment"></i> Kommentariya</span>';
+    const matchAllLabel = t.match_all
+      ? '<span class="badge badge-orange" style="font-size:11px"><i class="fas fa-users"></i> Barcha</span>'
+      : '';
+    const keywordDisplay = t.match_all
+      ? '<div class="trigger-keyword trigger-keyword-all">👥 Barcha kommentariyalar</div>'
+      : `<div class="trigger-keyword">${escHtml(t.keyword)}</div>`;
     return `<div class="trigger-card">
-      <div class="trigger-keyword">${escHtml(t.keyword)}</div>
+      ${keywordDisplay}
       <div class="trigger-body">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
           <span class="badge ${t.is_active ? 'badge-green' : 'badge-gray'}" style="font-size:11px">
             ${t.is_active ? '✅ Faol' : '⏸️ To\'xtatilgan'}
           </span>
+          ${typeLabel}
+          ${matchAllLabel}
           ${acc ? `<span style="font-size:12px;color:var(--text3)">@${acc.username}</span>` : ''}
           <span style="font-size:12px;color:var(--text3)">
-            <i class="fas fa-fire" style="color:var(--orange)"></i> ${t.trigger_count} marta ishlatildi
+            <i class="fas fa-fire" style="color:var(--orange)"></i> ${t.trigger_count} marta
           </span>
         </div>
         <div class="trigger-message">${escHtml(t.reply_message)}</div>
@@ -295,7 +306,7 @@ function renderTriggers(triggers) {
         </div>
       </div>
       <div class="trigger-actions">
-        <button class="btn btn-sm btn-ghost btn-icon" onclick="openEditTrigger(${t.id}, '${escJs(t.keyword)}', \`${escJs(t.reply_message)}\`, ${t.is_active})" title="Tahrirlash">
+        <button class="btn btn-sm btn-ghost btn-icon" onclick="openEditTrigger(${t.id}, '${escJs(t.keyword)}', \`${escJs(t.reply_message)}\`, ${t.is_active}, ${t.match_all || 0}, '${t.trigger_type || 'comment'}')" title="Tahrirlash">
           <i class="fas fa-edit"></i>
         </button>
         <button class="btn btn-sm btn-danger btn-icon" onclick="deleteTrigger(${t.id})" title="O'chirish">
@@ -306,17 +317,48 @@ function renderTriggers(triggers) {
   }).join('');
 }
 
+function toggleKeywordField(prefix) {
+  const isMatchAll = document.getElementById(`${prefix}TriggerMatchAll`)?.checked;
+  const kwGroup = document.getElementById(`${prefix}KeywordGroup`);
+  if (kwGroup) kwGroup.style.display = isMatchAll ? 'none' : '';
+
+  // DM trigger bo'lsa match_all option ko'rsatmaslik
+  const triggerType = document.querySelector(`input[name="${prefix}TriggerType"]:checked`)?.value || 'comment';
+  const matchAllGroup = document.getElementById(`${prefix}MatchAllGroup`);
+  if (matchAllGroup) matchAllGroup.style.display = triggerType === 'dm' ? 'none' : '';
+  if (triggerType === 'dm') {
+    const maCheck = document.getElementById(`${prefix}TriggerMatchAll`);
+    if (maCheck) maCheck.checked = false;
+    if (kwGroup) kwGroup.style.display = '';
+  }
+}
+
+function insertVar(textareaId, text) {
+  const el = document.getElementById(textareaId);
+  if (!el) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  el.value = el.value.substring(0, start) + text + el.value.substring(end);
+  el.selectionStart = el.selectionEnd = start + text.length;
+  el.focus();
+}
+
 async function createTrigger() {
   const account_id = parseInt(document.getElementById('newTriggerAccount').value);
-  const keyword = document.getElementById('newTriggerKeyword').value.trim();
+  const match_all = document.getElementById('newTriggerMatchAll').checked ? 1 : 0;
+  const trigger_type = document.querySelector('input[name="newTriggerType"]:checked')?.value || 'comment';
+  const keyword = match_all ? '*' : document.getElementById('newTriggerKeyword').value.trim();
   const reply_message = document.getElementById('newTriggerMessage').value.trim();
-  if (!keyword) return toast('Kalit so\'z kiriting!', 'error');
+  if (!match_all && !keyword) return toast('Kalit so\'z kiriting!', 'error');
   if (!reply_message) return toast('DM xabari kiriting!', 'error');
   try {
-    await api('POST', '/api/triggers', { account_id, keyword, reply_message });
+    await api('POST', '/api/triggers', { account_id, keyword, reply_message, match_all, trigger_type });
     closeModal('addTriggerModal');
     document.getElementById('newTriggerKeyword').value = '';
     document.getElementById('newTriggerMessage').value = '';
+    document.getElementById('newTriggerMatchAll').checked = false;
+    document.querySelector('input[name="newTriggerType"][value="comment"]').checked = true;
+    toggleKeywordField('new');
     await loadTriggers();
     await loadStats();
     toast('✅ Trigger yaratildi!', 'success');
@@ -325,22 +367,33 @@ async function createTrigger() {
   }
 }
 
-function openEditTrigger(id, keyword, message, is_active) {
+function openEditTrigger(id, keyword, message, is_active, match_all, trigger_type) {
   document.getElementById('editTriggerId').value = id;
-  document.getElementById('editTriggerKeyword').value = keyword;
+  document.getElementById('editTriggerKeyword').value = match_all ? '' : keyword;
   document.getElementById('editTriggerMessage').value = message;
   document.getElementById('editTriggerActive').value = is_active;
+  document.getElementById('editTriggerMatchAll').checked = !!match_all;
+
+  const tt = trigger_type || 'comment';
+  document.querySelectorAll('input[name="editTriggerType"]').forEach(r => {
+    r.checked = (r.value === tt);
+  });
+
+  toggleKeywordField('edit');
   openModal('editTriggerModal');
 }
 
 async function updateTrigger() {
   const id = document.getElementById('editTriggerId').value;
-  const keyword = document.getElementById('editTriggerKeyword').value.trim();
+  const match_all = document.getElementById('editTriggerMatchAll').checked ? 1 : 0;
+  const trigger_type = document.querySelector('input[name="editTriggerType"]:checked')?.value || 'comment';
+  const keyword = match_all ? '*' : document.getElementById('editTriggerKeyword').value.trim();
   const reply_message = document.getElementById('editTriggerMessage').value.trim();
   const is_active = parseInt(document.getElementById('editTriggerActive').value);
-  if (!keyword || !reply_message) return toast('Barcha maydonlarni to\'ldiring!', 'error');
+  if (!match_all && !keyword) return toast('Kalit so\'z kiriting!', 'error');
+  if (!reply_message) return toast('Xabar matnini kiriting!', 'error');
   try {
-    await api('PUT', `/api/triggers/${id}`, { keyword, reply_message, is_active });
+    await api('PUT', `/api/triggers/${id}`, { keyword, reply_message, is_active, match_all, trigger_type });
     closeModal('editTriggerModal');
     await loadTriggers();
     toast('✅ Trigger yangilandi!', 'success');

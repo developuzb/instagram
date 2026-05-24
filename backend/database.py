@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS triggers (
     keyword TEXT NOT NULL,
     reply_message TEXT NOT NULL,
     is_active INTEGER DEFAULT 1,
+    match_all INTEGER DEFAULT 0,
+    trigger_type TEXT DEFAULT 'comment',
     trigger_count INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (account_id) REFERENCES accounts(id)
@@ -148,12 +150,13 @@ async def get_triggers(account_id: int = None):
         await db.close()
 
 
-async def create_trigger(account_id: int, keyword: str, reply_message: str):
+async def create_trigger(account_id: int, keyword: str, reply_message: str,
+                         match_all: int = 0, trigger_type: str = 'comment'):
     db = await get_db()
     try:
         cursor = await db.execute(
-            "INSERT INTO triggers (account_id, keyword, reply_message) VALUES (?, ?, ?)",
-            (account_id, keyword.strip().lower(), reply_message)
+            "INSERT INTO triggers (account_id, keyword, reply_message, match_all, trigger_type) VALUES (?, ?, ?, ?, ?)",
+            (account_id, keyword.strip().lower(), reply_message, match_all, trigger_type)
         )
         await db.commit()
         return cursor.lastrowid
@@ -161,12 +164,13 @@ async def create_trigger(account_id: int, keyword: str, reply_message: str):
         await db.close()
 
 
-async def update_trigger(trigger_id: int, keyword: str, reply_message: str, is_active: int):
+async def update_trigger(trigger_id: int, keyword: str, reply_message: str,
+                         is_active: int, match_all: int = 0, trigger_type: str = 'comment'):
     db = await get_db()
     try:
         await db.execute(
-            "UPDATE triggers SET keyword=?, reply_message=?, is_active=? WHERE id=?",
-            (keyword.strip().lower(), reply_message, is_active, trigger_id)
+            "UPDATE triggers SET keyword=?, reply_message=?, is_active=?, match_all=?, trigger_type=? WHERE id=?",
+            (keyword.strip().lower(), reply_message, is_active, match_all, trigger_type, trigger_id)
         )
         await db.commit()
     finally:
@@ -182,27 +186,39 @@ async def delete_trigger(trigger_id: int):
         await db.close()
 
 
-async def find_matching_trigger(account_id: int, comment_text: str):
+async def find_matching_trigger(account_id: int, comment_text: str, trigger_type: str = 'comment'):
     db = await get_db()
     try:
         comment_lower = comment_text.strip().lower()
         cursor = await db.execute(
-            "SELECT * FROM triggers WHERE account_id = ? AND is_active = 1",
-            (account_id,)
+            "SELECT * FROM triggers WHERE account_id = ? AND is_active = 1 AND trigger_type = ?",
+            (account_id, trigger_type)
         )
         rows = await cursor.fetchall()
+        match_all_trigger = None
         for row in rows:
             trigger = dict(row)
             kw = trigger['keyword']
+            # match_all trigger — barcha kommentariyalarga javob
+            if trigger.get('match_all'):
+                match_all_trigger = trigger
+                continue
             # Exact match yoki comment ichida kalit so'z bor
             if kw == comment_lower or kw in comment_lower:
-                # Trigger count oshirish
                 await db.execute(
                     "UPDATE triggers SET trigger_count = trigger_count + 1 WHERE id = ?",
                     (trigger['id'],)
                 )
                 await db.commit()
                 return trigger
+        # Kalit so'z topilmasa — match_all trigger ishlatiladi
+        if match_all_trigger:
+            await db.execute(
+                "UPDATE triggers SET trigger_count = trigger_count + 1 WHERE id = ?",
+                (match_all_trigger['id'],)
+            )
+            await db.commit()
+            return match_all_trigger
         return None
     finally:
         await db.close()

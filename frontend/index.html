@@ -335,7 +335,7 @@
 
 <!-- Add Trigger Modal -->
 <div id="addTriggerModal" class="modal">
-  <div class="modal-content">
+  <div class="modal-content modal-wide">
     <div class="modal-header">
       <h3><i class="fas fa-bolt"></i> Trigger qo'shish</h3>
       <button onclick="closeModal('addTriggerModal')" class="modal-close"><i class="fas fa-times"></i></button>
@@ -346,13 +346,50 @@
         <select id="newTriggerAccount"></select>
       </div>
       <div class="form-group">
+        <label>Trigger turi</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="newTriggerType" value="comment" checked onchange="toggleKeywordField('new')">
+            <span><i class="fas fa-comment"></i> Kommentariya trigger</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="newTriggerType" value="dm" onchange="toggleKeywordField('new')">
+            <span><i class="fas fa-envelope"></i> DM trigger</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group" id="newMatchAllGroup">
+        <label class="checkbox-label">
+          <input type="checkbox" id="newTriggerMatchAll" onchange="toggleKeywordField('new')">
+          <span><i class="fas fa-users"></i> <strong>Barcha kommentariyalarga javob</strong> (kalit so'zsiz)</span>
+        </label>
+        <small>Yoqilsa — ixtiyoriy kommentariya yozganda DM yuboriladi</small>
+      </div>
+      <div class="form-group" id="newKeywordGroup">
         <label>Kalit so'z (trigger) *</label>
         <input type="text" id="newTriggerKeyword" placeholder="+ yoki 'manzil' yoki 'narx'">
-        <small>Kommentariyada shu so'z bo'lsa DM yuboriladi</small>
+        <small>Kommentariyada / DM da shu so'z bo'lsa javob yuboriladi</small>
       </div>
       <div class="form-group">
-        <label>DM xabari *</label>
-        <textarea id="newTriggerMessage" rows="5" placeholder="Salom! 👋&#10;&#10;So'ragan ma'lumotingiz:&#10;📍 Manzil: Toshkent, Chilonzor&#10;📞 Tel: +998901234567&#10;&#10;Tez orada bog'lanamiz!"></textarea>
+        <label>Xabar matni *</label>
+        <div class="template-toolbar">
+          <span class="toolbar-label"><i class="fas fa-magic"></i> O'zgaruvchilar:</span>
+          <button type="button" class="btn-var" onclick="insertVar('newTriggerMessage', '{ism}')">👤 {ism}</button>
+          <button type="button" class="btn-var" onclick="insertVar('newTriggerMessage', '{username}')">@{username}</button>
+          <span class="toolbar-sep"></span>
+          <span class="toolbar-label"><i class="fas fa-smile"></i> Emoji:</span>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '👋')">👋</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '🎉')">🎉</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '📍')">📍</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '📞')">📞</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '✅')">✅</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '💬')">💬</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '🔥')">🔥</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '💎')">💎</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('newTriggerMessage', '🚀')">🚀</button>
+        </div>
+        <textarea id="newTriggerMessage" rows="6" placeholder="Salom {ism}! 👋&#10;&#10;So'ragan ma'lumotingiz:&#10;📍 Manzil: Toshkent, Chilonzor&#10;📞 Tel: +998901234567&#10;&#10;Tez orada bog'lanamiz!"></textarea>
+        <small style="color:var(--accent)">💡 <strong>{ism}</strong> — foydalanuvchi ismi, <strong>{username}</strong> — Instagram login</small>
       </div>
     </div>
     <div class="modal-footer">
@@ -366,7 +403,7 @@
 
 <!-- Edit Trigger Modal -->
 <div id="editTriggerModal" class="modal">
-  <div class="modal-content">
+  <div class="modal-content modal-wide">
     <div class="modal-header">
       <h3><i class="fas fa-edit"></i> Trigger tahrirlash</h3>
       <button onclick="closeModal('editTriggerModal')" class="modal-close"><i class="fas fa-times"></i></button>
@@ -374,12 +411,48 @@
     <div class="modal-body">
       <input type="hidden" id="editTriggerId">
       <div class="form-group">
+        <label>Trigger turi</label>
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="editTriggerType" value="comment" onchange="toggleKeywordField('edit')">
+            <span><i class="fas fa-comment"></i> Kommentariya trigger</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="editTriggerType" value="dm" onchange="toggleKeywordField('edit')">
+            <span><i class="fas fa-envelope"></i> DM trigger</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group" id="editMatchAllGroup">
+        <label class="checkbox-label">
+          <input type="checkbox" id="editTriggerMatchAll" onchange="toggleKeywordField('edit')">
+          <span><i class="fas fa-users"></i> <strong>Barcha kommentariyalarga javob</strong></span>
+        </label>
+      </div>
+      <div class="form-group" id="editKeywordGroup">
         <label>Kalit so'z *</label>
         <input type="text" id="editTriggerKeyword">
       </div>
       <div class="form-group">
-        <label>DM xabari *</label>
-        <textarea id="editTriggerMessage" rows="5"></textarea>
+        <label>Xabar matni *</label>
+        <div class="template-toolbar">
+          <span class="toolbar-label"><i class="fas fa-magic"></i> O'zgaruvchilar:</span>
+          <button type="button" class="btn-var" onclick="insertVar('editTriggerMessage', '{ism}')">👤 {ism}</button>
+          <button type="button" class="btn-var" onclick="insertVar('editTriggerMessage', '{username}')">@{username}</button>
+          <span class="toolbar-sep"></span>
+          <span class="toolbar-label"><i class="fas fa-smile"></i> Emoji:</span>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '👋')">👋</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '🎉')">🎉</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '📍')">📍</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '📞')">📞</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '✅')">✅</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '💬')">💬</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '🔥')">🔥</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '💎')">💎</button>
+          <button type="button" class="btn-emoji" onclick="insertVar('editTriggerMessage', '🚀')">🚀</button>
+        </div>
+        <textarea id="editTriggerMessage" rows="6"></textarea>
+        <small style="color:var(--accent)">💡 <strong>{ism}</strong> — foydalanuvchi ismi, <strong>{username}</strong> — Instagram login</small>
       </div>
       <div class="form-group">
         <label>Holat</label>

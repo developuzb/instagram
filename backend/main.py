@@ -163,12 +163,16 @@ class TriggerCreate(BaseModel):
     account_id: int
     keyword: str
     reply_message: str
+    match_all: int = 0
+    trigger_type: str = 'comment'
 
 
 class TriggerUpdate(BaseModel):
     keyword: str
     reply_message: str
     is_active: int = 1
+    match_all: int = 0
+    trigger_type: str = 'comment'
 
 
 @app.get("/api/triggers")
@@ -178,13 +182,17 @@ async def api_get_triggers(account_id: Optional[int] = None, auth=Depends(check_
 
 @app.post("/api/triggers")
 async def api_create_trigger(body: TriggerCreate, auth=Depends(check_admin)):
-    trigger_id = await create_trigger(body.account_id, body.keyword, body.reply_message)
+    trigger_id = await create_trigger(
+        body.account_id, body.keyword, body.reply_message,
+        body.match_all, body.trigger_type
+    )
     return {"id": trigger_id, "success": True}
 
 
 @app.put("/api/triggers/{trigger_id}")
 async def api_update_trigger(trigger_id: int, body: TriggerUpdate, auth=Depends(check_admin)):
-    await update_trigger(trigger_id, body.keyword, body.reply_message, body.is_active)
+    await update_trigger(trigger_id, body.keyword, body.reply_message,
+                         body.is_active, body.match_all, body.trigger_type)
     return {"success": True}
 
 
@@ -368,11 +376,20 @@ async def process_webhook(data: dict):
         traceback.print_exc()
 
 
+def apply_template(message: str, name: str = "", username: str = "") -> str:
+    """Xabar shablonidagi o'zgaruvchilarni almashtirish"""
+    return (message
+            .replace("{ism}", name or "Do'stim")
+            .replace("{username}", username or "")
+            .replace("{name}", name or "Do'stim"))
+
+
 async def handle_comment_event(value: dict, accounts: list):
     """Kommentariya eventini ishlov berish"""
     from_user = value.get("from", {})
     sender_id = from_user.get("id")
     sender_name = from_user.get("name", "")
+    sender_username = from_user.get("username", "")
     comment_text = value.get("text", "")
     media_id = value.get("media", {}).get("id", "")
 
@@ -381,13 +398,11 @@ async def handle_comment_event(value: dict, accounts: list):
 
     print(f"💬 Yangi kommentariya: '{comment_text}' from {sender_id}")
 
-    # Qaysi akkauntga tegishli ekanligini aniqlash
-    # Hamma aktiv akkauntlarni tekshirish
     for account in accounts:
         if not account.get("is_active"):
             continue
 
-        trigger = await find_matching_trigger(account["id"], comment_text)
+        trigger = await find_matching_trigger(account["id"], comment_text, trigger_type='comment')
         if not trigger:
             continue
 
@@ -396,8 +411,11 @@ async def handle_comment_event(value: dict, accounts: list):
         # Subscriber saqlash
         sub_id = await upsert_subscriber(account["id"], sender_id, sender_name)
 
+        # Shablon o'zgaruvchilarini qo'llash
+        final_message = apply_template(trigger["reply_message"], sender_name, sender_username)
+
         # DM yuborish
-        result = await send_dm(sender_id, trigger["reply_message"], account["page_access_token"])
+        result = await send_dm(sender_id, final_message, account["page_access_token"])
 
         # Log saqlash
         status = "sent" if "message_id" in result or "recipient_id" in result else "failed"
@@ -407,7 +425,7 @@ async def handle_comment_event(value: dict, accounts: list):
             trigger_id=trigger["id"],
             post_id=media_id,
             comment_text=comment_text,
-            sent_message=trigger["reply_message"],
+            sent_message=final_message,
             status=status
         )
         break  # Birinchi mos akkaunt topilsa to'xtatish
@@ -430,7 +448,7 @@ async def handle_message_event(event: dict, accounts: list):
         if not account.get("is_active"):
             continue
 
-        trigger = await find_matching_trigger(account["id"], message_text)
+        trigger = await find_matching_trigger(account["id"], message_text, trigger_type='dm')
         if not trigger:
             continue
 
@@ -439,8 +457,11 @@ async def handle_message_event(event: dict, accounts: list):
         # Subscriber saqlash/yangilash
         sub_id = await upsert_subscriber(account["id"], sender_id)
 
+        # Shablon o'zgaruvchilarini qo'llash
+        final_dm = apply_template(trigger["reply_message"])
+
         # DM javob yuborish
-        result = await send_dm(sender_id, trigger["reply_message"], account["page_access_token"])
+        result = await send_dm(sender_id, final_dm, account["page_access_token"])
 
         # Log saqlash
         status = "sent" if "message_id" in result or "recipient_id" in result else "failed"
@@ -450,7 +471,7 @@ async def handle_message_event(event: dict, accounts: list):
             trigger_id=trigger["id"],
             post_id="dm",
             comment_text=message_text,
-            sent_message=trigger["reply_message"],
+            sent_message=final_dm,
             status=status
         )
         break
