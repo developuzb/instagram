@@ -74,13 +74,17 @@ async def init_db():
             if stmt:
                 await db.execute(stmt)
 
-        # Default settings
-        await db.execute("""
-            INSERT OR IGNORE INTO settings (key, value) VALUES
-            ('welcome_message', 'Salom! Sizning kommentariyangizni oldik. Tez orada javob beramiz! 😊'),
-            ('default_reply', 'Rahmat! Batafsil ma\'lumot uchun profilimizga qarang.'),
-            ('auto_subscribe', '1')
-        """)
+        # Default settings — parameterized so'rovlar (apostrof xatosidan himoya)
+        defaults = [
+            ('welcome_message', 'Salom! Sizning kommentariyangizni oldik. Tez orada javob beramiz!'),
+            ('default_reply', 'Rahmat! Batafsil malumot uchun profilimizga qarang.'),
+            ('auto_subscribe', '1'),
+        ]
+        for key, val in defaults:
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, val)
+            )
         await db.commit()
     print("✅ Database initialized successfully")
 
