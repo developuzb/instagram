@@ -47,10 +47,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Frontend static fayllar
+# Frontend static fayllar — absolute path bilan
 import os as _os
-frontend_path = _os.path.join(_os.path.dirname(__file__), "..", "frontend")
-app.mount("/static", StaticFiles(directory=_os.path.join(frontend_path, "static")), name="static")
+_base = _os.path.abspath(_os.path.dirname(__file__))
+frontend_path = _os.path.join(_base, "..", "frontend")
+_static_dir = _os.path.abspath(_os.path.join(frontend_path, "static"))
+if _os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+else:
+    print(f"⚠️ Static dir topilmadi: {_static_dir}")
 
 
 @app.on_event("startup")

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: instagram-chatbot
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: WEBHOOK_VERIFY_TOKEN
+        value: mysecret_instagram_bot_2024
+      - key: ADMIN_PASSWORD
+        value: admin123
+      - key: PORT
+        value: 10000
+      - key: META_APP_SECRET
+        value: ""
+      - key: PAGE_ACCESS_TOKEN
+        value: ""
