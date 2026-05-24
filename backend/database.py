@@ -8,6 +8,7 @@ CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     instagram_id TEXT UNIQUE,
+    page_id TEXT,
     username TEXT,
     page_access_token TEXT,
     is_active INTEGER DEFAULT 1,
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER,
     post_id TEXT UNIQUE NOT NULL,
+    media_numeric_id TEXT,
     post_url TEXT,
     caption TEXT,
     is_monitoring INTEGER DEFAULT 1,
@@ -109,12 +111,12 @@ async def get_accounts():
         await db.close()
 
 
-async def create_account(instagram_id: str, username: str, page_access_token: str):
+async def create_account(instagram_id: str, username: str, page_access_token: str, page_id: str = None):
     db = await get_db()
     try:
         await db.execute(
-            "INSERT OR REPLACE INTO accounts (instagram_id, username, page_access_token) VALUES (?, ?, ?)",
-            (instagram_id, username, page_access_token)
+            "INSERT OR REPLACE INTO accounts (instagram_id, page_id, username, page_access_token) VALUES (?, ?, ?, ?)",
+            (instagram_id, page_id, username, page_access_token)
         )
         await db.commit()
         cursor = await db.execute("SELECT * FROM accounts WHERE instagram_id = ?", (instagram_id,))
@@ -241,12 +243,25 @@ async def get_posts(account_id: int = None):
         await db.close()
 
 
-async def add_post(account_id: int, post_id: str, post_url: str = "", caption: str = ""):
+async def add_post(account_id: int, post_id: str, post_url: str = "", caption: str = "", media_numeric_id: str = None):
     db = await get_db()
     try:
         await db.execute(
-            "INSERT OR IGNORE INTO posts (account_id, post_id, post_url, caption) VALUES (?, ?, ?, ?)",
-            (account_id, post_id, post_url, caption)
+            "INSERT OR IGNORE INTO posts (account_id, post_id, media_numeric_id, post_url, caption) VALUES (?, ?, ?, ?, ?)",
+            (account_id, post_id, media_numeric_id, post_url, caption)
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def update_post_media_id(post_shortcode: str, media_numeric_id: str):
+    """Post shortcode bo'yicha numeric media ID ni yangilash"""
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE posts SET media_numeric_id = ? WHERE post_id = ? AND media_numeric_id IS NULL",
+            (media_numeric_id, post_shortcode)
         )
         await db.commit()
     finally:

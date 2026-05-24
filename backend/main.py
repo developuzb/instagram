@@ -22,21 +22,37 @@ from database import (
     init_db, get_stats,
     get_accounts, create_account, delete_account,
     get_triggers, create_trigger, update_trigger, delete_trigger, find_matching_trigger,
-    get_posts, add_post, toggle_post_monitoring,
+    get_posts, add_post, toggle_post_monitoring, update_post_media_id,
     get_subscribers,
     upsert_subscriber,
     log_message, get_messages_log,
 )
 from instagram_api import (
     send_dm, get_instagram_account_info,
-    get_post_info, verify_access_token, subscribe_to_webhooks
+    get_post_info, verify_access_token, subscribe_to_webhooks,
+    get_user_media, get_media_comments, get_ig_conversations, get_page_id
 )
+
+import datetime
 
 load_dotenv()
 
 WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "my_secret_verify_token_123")
 META_APP_SECRET = os.getenv("META_APP_SECRET", "")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "60"))  # soniya
+
+# ── Polling state ──
+_processed_comment_ids: set = set()
+_processed_dm_ids: set = set()
+_poll_stats = {
+    "running": False,
+    "last_poll": None,
+    "polls_done": 0,
+    "comments_found": 0,
+    "dms_sent": 0,
+    "errors": 0,
+}
 
 app = FastAPI(title="Instagram Chatbot Admin", version="1.0.0")
 
@@ -63,6 +79,8 @@ async def startup():
     await init_db()
     print("🚀 Instagram Chatbot server ishga tushdi!")
     print(f"📊 Admin Panel: http://localhost:{os.getenv('PORT', 8000)}")
+    asyncio.create_task(polling_loop())
+    print(f"🔄 Polling rejimi yoqildi (har {POLL_INTERVAL}s)")
 
 
 # ════════════════════════════════════════════════
@@ -131,10 +149,14 @@ async def api_create_account(body: AccountCreate, auth=Depends(check_admin)):
     if "error" in ig_info:
         raise HTTPException(status_code=400, detail=ig_info["error"])
 
+    # Facebook Page ID olish (DM polling uchun)
+    fb_page_id = await get_page_id(body.page_access_token)
+
     account = await create_account(
         instagram_id=ig_info.get("id"),
         username=ig_info.get("username", ig_info.get("name", "Unknown")),
-        page_access_token=body.page_access_token
+        page_access_token=body.page_access_token,
+        page_id=fb_page_id
     )
     return account
 
@@ -344,6 +366,173 @@ async def webhook_receive(request: Request):
     return {"status": "ok"}
 
 
+# ════════════════════════════════════════════════
+#  POLLING ENGINE
+# ════════════════════════════════════════════════
+
+_server_start = datetime.datetime.utcnow()
+
+
+async def polling_loop():
+    """Davriy polling asosiy loop"""
+    global _poll_stats
+    await asyncio.sleep(3)  # serverga ishga tushish uchun vaqt
+    _poll_stats["running"] = True
+    print("🔄 Polling loop boshlandi")
+
+    while True:
+        try:
+            await poll_all_accounts()
+            _poll_stats["polls_done"] += 1
+            _poll_stats["last_poll"] = datetime.datetime.utcnow().isoformat()
+        except Exception as e:
+            _poll_stats["errors"] += 1
+            print(f"❌ Polling loop xatosi: {e}")
+        await asyncio.sleep(POLL_INTERVAL)
+
+
+async def poll_all_accounts():
+    """Barcha aktiv akkauntlarni tekshirish"""
+    accounts = await get_accounts()
+    if not accounts:
+        return
+    for account in accounts:
+        if not account.get("is_active"):
+            continue
+        await poll_comments(account)
+        await poll_dms(account)
+
+
+async def poll_comments(account: dict):
+    """Yangi kommentariyalarni tekshirish"""
+    global _poll_stats
+    ig_user_id = account.get("instagram_id")
+    token = account.get("page_access_token")
+    if not ig_user_id or not token:
+        return
+
+    # Barcha postlar media_numeric_id larini yangilash
+    try:
+        media_list = await get_user_media(ig_user_id, token)
+        media_map = {m["shortcode"]: m["id"] for m in media_list}
+        for shortcode, num_id in media_map.items():
+            await update_post_media_id(shortcode, num_id)
+    except Exception as e:
+        print(f"❌ Media list xatosi (@{account.get('username')}): {e}")
+        _poll_stats["errors"] += 1
+        return
+
+    # Kuzatiladigan postlar
+    posts = await get_posts(account["id"])
+    for post in posts:
+        if not post.get("is_monitoring"):
+            continue
+        media_id = post.get("media_numeric_id") or media_map.get(post["post_id"])
+        if not media_id:
+            continue
+
+        try:
+            comments = await get_media_comments(media_id, token, limit=20)
+        except Exception as e:
+            print(f"❌ Comments xatosi ({media_id}): {e}")
+            continue
+
+        for comment in reversed(comments):  # eskidan yangi tartibda
+            cid = comment.get("id")
+            if not cid or cid in _processed_comment_ids:
+                continue
+            _processed_comment_ids.add(cid)
+
+            # Server ishga tushishidan eski kommentariyani o'tkaz
+            try:
+                ctime_str = comment.get("timestamp", "")
+                if ctime_str:
+                    ctime = datetime.datetime.fromisoformat(ctime_str.replace("Z", "+00:00"))
+                    ctime_utc = ctime.replace(tzinfo=None)
+                    if ctime_utc < _server_start:
+                        continue  # eski kommentariya — o'tkaz
+            except Exception:
+                pass
+
+            _poll_stats["comments_found"] += 1
+            print(f"🆕 Yangi kommentariya (polling): '{comment.get('text', '')}' — @{account.get('username')}")
+
+            from_user = comment.get("from", {})
+            value = {
+                "from": from_user,
+                "text": comment.get("text", ""),
+                "media": {"id": media_id}
+            }
+            asyncio.create_task(handle_comment_event(value, [account]))
+
+
+async def poll_dms(account: dict):
+    """Yangi DM larni tekshirish"""
+    global _poll_stats
+    token = account.get("page_access_token")
+    page_id = account.get("page_id")
+
+    if not page_id:
+        # page_id saqlanmagan — bir marta olib DB ga yozamiz
+        try:
+            pid = await get_page_id(token)
+            if pid:
+                from database import get_db
+                db = await get_db()
+                try:
+                    await db.execute("UPDATE accounts SET page_id = ? WHERE id = ?", (pid, account["id"]))
+                    await db.commit()
+                finally:
+                    await db.close()
+                page_id = pid
+        except Exception:
+            return
+
+    if not page_id:
+        return
+
+    try:
+        conversations = await get_ig_conversations(page_id, token)
+    except Exception as e:
+        print(f"❌ DM polling xatosi: {e}")
+        return
+
+    for conv in conversations:
+        messages = conv.get("messages", {}).get("data", [])
+        for msg in reversed(messages):
+            mid = msg.get("id")
+            if not mid or mid in _processed_dm_ids:
+                continue
+            _processed_dm_ids.add(mid)
+
+            # Server ishga tushishidan eski xabarni o'tkaz
+            try:
+                mtime_str = msg.get("created_time", "")
+                if mtime_str:
+                    mtime = datetime.datetime.fromisoformat(mtime_str.replace("Z", "+00:00"))
+                    mtime_utc = mtime.replace(tzinfo=None)
+                    if mtime_utc < _server_start:
+                        continue
+            except Exception:
+                pass
+
+            from_info = msg.get("from", {})
+            sender_id = from_info.get("id")
+            if not sender_id or sender_id == page_id:
+                continue  # o'zimizning xabarlarga javob berma
+
+            msg_text = msg.get("message", "")
+            if not msg_text:
+                continue
+
+            print(f"📩 Yangi DM (polling): '{msg_text}' from {sender_id}")
+            event = {
+                "sender": {"id": sender_id},
+                "message": {"text": msg_text}
+            }
+            asyncio.create_task(handle_message_event(event, [account]))
+
+
 async def process_webhook(data: dict):
     """Webhook datani asosiy ishlov berish"""
     try:
@@ -478,6 +667,37 @@ async def handle_message_event(event: dict, accounts: list):
 
 
 # ════════════════════════════════════════════════
+#  POLLING STATUS API
+# ════════════════════════════════════════════════
+
+@app.get("/api/polling/status")
+async def api_polling_status(auth=Depends(check_admin)):
+    return {
+        **_poll_stats,
+        "poll_interval": POLL_INTERVAL,
+        "processed_comments": len(_processed_comment_ids),
+        "processed_dms": len(_processed_dm_ids),
+        "server_start": _server_start.isoformat(),
+    }
+
+
+@app.post("/api/polling/trigger")
+async def api_polling_trigger(auth=Depends(check_admin)):
+    """Qo'lda polling ishga tushirish"""
+    asyncio.create_task(poll_all_accounts())
+    return {"success": True, "message": "Polling boshlandi"}
+
+
+@app.put("/api/polling/interval")
+async def api_set_poll_interval(seconds: int, auth=Depends(check_admin)):
+    global POLL_INTERVAL
+    if seconds < 15 or seconds > 3600:
+        raise HTTPException(status_code=400, detail="Interval 15-3600 soniya oralig'ida bo'lishi kerak")
+    POLL_INTERVAL = seconds
+    return {"success": True, "poll_interval": POLL_INTERVAL}
+
+
+# ════════════════════════════════════════════════
 #  HEALTH CHECK
 # ════════════════════════════════════════════════
 
@@ -486,7 +706,9 @@ async def health_check():
     return {
         "status": "online",
         "service": "Instagram Chatbot",
-        "webhook_token": WEBHOOK_VERIFY_TOKEN[:4] + "****"
+        "webhook_token": WEBHOOK_VERIFY_TOKEN[:4] + "****",
+        "polling": _poll_stats["running"],
+        "poll_interval": POLL_INTERVAL,
     }
 
 

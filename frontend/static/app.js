@@ -100,6 +100,7 @@ function showPage(name) {
     posts: 'Postlar',
     subscribers: 'Obunachlar',
     messages: 'Xabarlar',
+    polling: '🔄 Polling Rejimi',
     webhook: 'Webhook',
     testdm: 'Test DM'
   };
@@ -111,6 +112,7 @@ function showPage(name) {
   else if (name === 'subscribers') loadSubscribers();
   else if (name === 'messages') loadMessages();
   else if (name === 'testdm') populateTestDmAccounts();
+  else if (name === 'polling') loadPollingStatus();
 }
 
 function toggleSidebar() {
@@ -573,6 +575,82 @@ async function loadMessages() {
     </table></div>`;
   } catch (e) {
     document.getElementById('messagesList').innerHTML = '<div class="empty">Yuklanmadi</div>';
+  }
+}
+
+// ──────────── POLLING ────────────
+
+async function loadPollingStatus() {
+  try {
+    const s = await api('GET', '/api/polling/status');
+    const el = document.getElementById('pollingInfo');
+
+    document.getElementById('poll-status-val').textContent = s.running ? '🟢 Aktiv' : '🔴 To\'xtatilgan';
+    animateCount(document.getElementById('poll-count'), s.polls_done || 0, 600);
+    animateCount(document.getElementById('poll-comments'), s.comments_found || 0, 700);
+    animateCount(document.getElementById('poll-dms'), s.dms_sent || 0, 700);
+    if (document.getElementById('pollIntervalInput')) {
+      document.getElementById('pollIntervalInput').value = s.poll_interval || 60;
+    }
+
+    const lastPoll = s.last_poll ? new Date(s.last_poll).toLocaleString('uz-UZ') : 'Hali tekshirilmagan';
+    const startTime = s.server_start ? new Date(s.server_start).toLocaleString('uz-UZ') : '—';
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">
+        <div class="info-row">
+          <label>Holat</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="status-dot ${s.running ? 'online' : ''}"></span>
+            <span>${s.running ? 'Polling ishlayapti' : 'To\'xtatilgan'}</span>
+          </div>
+        </div>
+        <div class="info-row">
+          <label>Oxirgi tekshiruv</label>
+          <code style="color:var(--green);font-size:13px">${lastPoll}</code>
+        </div>
+        <div class="info-row">
+          <label>Server ishga tushdi</label>
+          <code style="color:var(--text2);font-size:13px">${startTime}</code>
+        </div>
+        <div class="info-row">
+          <label>Interval</label>
+          <code style="color:var(--orange);font-size:13px">Har ${s.poll_interval} soniyada</code>
+        </div>
+        <div class="info-row">
+          <label>Kesh (kommentariya)</label>
+          <span class="badge badge-blue">${s.processed_comments} ta saqlangan</span>
+        </div>
+        <div class="info-row">
+          <label>Kesh (DM)</label>
+          <span class="badge badge-purple">${s.processed_dms} ta saqlangan</span>
+        </div>
+      </div>
+      ${s.errors > 0 ? `<div class="info-box warning" style="margin-top:12px"><i class="fas fa-exclamation-triangle"></i><div><strong>${s.errors} ta xato</strong> yuz berdi. Konsolni tekshiring.</div></div>` : ''}
+    `;
+  } catch (e) {
+    document.getElementById('pollingInfo').innerHTML = '<div class="empty">Server bilan bog\'lanib bo\'lmadi</div>';
+  }
+}
+
+async function triggerPoll() {
+  try {
+    await api('POST', '/api/polling/trigger');
+    toast('✅ Polling ishga tushirildi!', 'success');
+    setTimeout(loadPollingStatus, 3000);
+  } catch (e) {
+    toast('❌ ' + e.message, 'error');
+  }
+}
+
+async function setPollInterval() {
+  const sec = parseInt(document.getElementById('pollIntervalInput').value);
+  if (!sec || sec < 15) return toast('Minimum 15 soniya!', 'error');
+  try {
+    await api('PUT', `/api/polling/interval?seconds=${sec}`);
+    toast(`✅ Interval ${sec}s ga o'rnatildi`, 'success');
+  } catch (e) {
+    toast('❌ ' + e.message, 'error');
   }
 }
 

@@ -63,6 +63,9 @@
       <a href="#" class="nav-item" onclick="showPage('messages')">
         <i class="fas fa-paper-plane"></i><span>Xabarlar</span>
       </a>
+      <a href="#" class="nav-item" onclick="showPage('polling')">
+        <i class="fas fa-satellite-dish"></i><span>Polling</span>
+      </a>
       <a href="#" class="nav-item" onclick="showPage('webhook')">
         <i class="fas fa-plug"></i><span>Webhook</span>
       </a>
@@ -231,6 +234,100 @@
         </div>
         <div id="messagesList">
           <div class="loading">Yuklanmoqda...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- POLLING -->
+    <section id="page-polling" class="page">
+      <div class="stats-grid" style="margin-bottom:20px">
+        <div class="stat-card green">
+          <div class="stat-icon"><i class="fas fa-satellite-dish"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="poll-status-val">—</div>
+            <div class="stat-label">Polling holati</div>
+          </div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-icon"><i class="fas fa-sync"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="poll-count">—</div>
+            <div class="stat-label">Tekshirishlar</div>
+          </div>
+        </div>
+        <div class="stat-card purple">
+          <div class="stat-icon"><i class="fas fa-comment"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="poll-comments">—</div>
+            <div class="stat-label">Topilgan kommentariyalar</div>
+          </div>
+        </div>
+        <div class="stat-card orange">
+          <div class="stat-icon"><i class="fas fa-paper-plane"></i></div>
+          <div class="stat-info">
+            <div class="stat-value" id="poll-dms">—</div>
+            <div class="stat-label">Yuborilgan DM</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h3><i class="fas fa-cog"></i> Polling Boshqaruv</h3>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="loadPollingStatus()">
+              <i class="fas fa-sync"></i> Yangilash
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="triggerPoll()">
+              <i class="fas fa-play"></i> Hozir tekshir
+            </button>
+          </div>
+        </div>
+
+        <div id="pollingInfo">
+          <div class="loading">Yuklanmoqda...</div>
+        </div>
+
+        <div style="margin-top:20px">
+          <div class="form-group">
+            <label>Tekshirish intervali (soniya)</label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <input type="number" id="pollIntervalInput" value="60" min="15" max="3600" style="max-width:120px">
+              <button class="btn btn-ghost btn-sm" onclick="setPollInterval()">
+                <i class="fas fa-save"></i> Saqlash
+              </button>
+            </div>
+            <small>Qanchalik kam bo'lsa — tezroq, lekin API limit ko'proq sarflanadi. Tavsiya: 60 soniya</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <h3 style="margin-bottom:16px"><i class="fas fa-info-circle"></i> Polling nima?</h3>
+        <div class="how-it-works">
+          <div class="step">
+            <span class="step-num">1</span>
+            <div><strong>Webhook shart emas</strong> — Bot o'zi Instagram API ga so'rov yuboradi</div>
+          </div>
+          <div class="step">
+            <span class="step-num">2</span>
+            <div><strong>Har N soniyada</strong> — Yangi kommentariya va DM larni tekshiradi</div>
+          </div>
+          <div class="step">
+            <span class="step-num">3</span>
+            <div><strong>Avtomatik DM</strong> — Trigger topilsa — darhol DM yuboradi</div>
+          </div>
+          <div class="step">
+            <span class="step-num">4</span>
+            <div><strong>Faqat Access Token kerak</strong> — Meta Developer account majburiy emas</div>
+          </div>
+        </div>
+        <div class="info-box warning" style="margin-top:16px">
+          <i class="fas fa-exclamation-triangle"></i>
+          <div>
+            <strong>Diqqat:</strong> Polling uchun ham <strong>Page Access Token</strong> kerak.
+            Uni <a href="https://business.facebook.com/settings/system-users" target="_blank">Meta Business Manager → System Users</a> dan olish mumkin (SMS tasdiqsiz).
+          </div>
         </div>
       </div>
     </section>

@@ -121,3 +121,69 @@ async def reply_to_comment(comment_id: str, message: str, page_access_token: str
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(url, json=payload, params=params)
         return response.json()
+
+
+# ══════════════════════════════════════
+#  POLLING uchun qo'shimcha funksiyalar
+# ══════════════════════════════════════
+
+async def get_user_media(ig_user_id: str, page_access_token: str, limit: int = 50) -> list:
+    """Instagram akkauntning barcha media (postlar) ro'yxatini olish"""
+    url = f"{GRAPH_API_BASE}/{ig_user_id}/media"
+    params = {
+        "fields": "id,shortcode,timestamp,media_type,permalink",
+        "limit": limit,
+        "access_token": page_access_token
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(url, params=params)
+        data = response.json()
+        if "error" in data:
+            print(f"❌ get_user_media xatosi: {data['error'].get('message')}")
+            return []
+        return data.get("data", [])
+
+
+async def get_media_comments(media_id: str, page_access_token: str, limit: int = 25) -> list:
+    """Media postidagi kommentariyalarni olish"""
+    url = f"{GRAPH_API_BASE}/{media_id}/comments"
+    params = {
+        "fields": "id,text,from,timestamp",
+        "limit": limit,
+        "access_token": page_access_token
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(url, params=params)
+        data = response.json()
+        if "error" in data:
+            print(f"❌ get_media_comments xatosi ({media_id}): {data['error'].get('message')}")
+            return []
+        return data.get("data", [])
+
+
+async def get_ig_conversations(page_id: str, page_access_token: str) -> list:
+    """Instagram DM suhbatlarini olish (Page ID kerak)"""
+    url = f"{GRAPH_API_BASE}/{page_id}/conversations"
+    params = {
+        "platform": "instagram",
+        "fields": "id,participants,messages{id,message,from,created_time}",
+        "limit": 10,
+        "access_token": page_access_token
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(url, params=params)
+        data = response.json()
+        if "error" in data:
+            print(f"❌ get_ig_conversations xatosi: {data['error'].get('message')}")
+            return []
+        return data.get("data", [])
+
+
+async def get_page_id(page_access_token: str) -> str | None:
+    """Page Access Token dan Facebook Page ID olish"""
+    url = f"{GRAPH_API_BASE}/me"
+    params = {"fields": "id", "access_token": page_access_token}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url, params=params)
+        data = response.json()
+        return data.get("id")
