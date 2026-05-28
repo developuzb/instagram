@@ -57,10 +57,12 @@ async def login_new(username: str, password: str) -> dict:
     if not INSTAGRAPI_AVAILABLE:
         return {"success": False, "error": "instagrapi server da o'rnatilmagan."}
 
+    uname = username.strip()
+
     def _login():
         cl = _make_client()
         try:
-            cl.login(username.strip(), password)
+            cl.login(uname, password)
             user_info = cl.account_info()
             session = json.dumps(cl.get_settings())
             return {
@@ -69,18 +71,14 @@ async def login_new(username: str, password: str) -> dict:
                 "username": user_info.username,
                 "full_name": user_info.full_name,
                 "session": session,
-                "client": cl
+                "client": cl,
             }
         except TwoFactorRequired:
-            # 2FA identifier ni cl.last_json dan olamiz
-            two_factor_info = cl.last_json.get("two_factor_info", {})
-            identifier = two_factor_info.get("two_factor_identifier", "")
             return {
                 "success": False,
                 "need_2fa": True,
-                "two_factor_identifier": identifier,
+                "username": uname,
                 "client": cl,
-                "username": username.strip(),
             }
         except BadPassword:
             return {"success": False, "error": "Noto'g'ri parol"}
@@ -93,13 +91,13 @@ async def login_new(username: str, password: str) -> dict:
 
     result = await _run(_login)
 
-    # 2FA holatida klientni vaqtincha saqlaymiz
+    # 2FA holatida: klient + parolni saqlaymiz (login() ni qayta chaqirish uchun)
     if result.get("need_2fa") and result.get("client"):
-        _pending_2fa[result["username"]] = {
+        _pending_2fa[uname] = {
             "client": result["client"],
-            "two_factor_identifier": result["two_factor_identifier"],
+            "username": uname,
+            "password": password,          # login() qayta chaqirilganda kerak
         }
-        result.pop("client", None)
 
     result.pop("client", None)
     return result
@@ -117,12 +115,11 @@ async def complete_2fa(username: str, code: str) -> dict:
 
     def _verify():
         cl = pending["client"]
-        identifier = pending["two_factor_identifier"]
+        uname = pending["username"]
+        pwd = pending["password"]
         try:
-            cl.two_factor_login(
-                verification_code=code.strip(),
-                two_factor_identifier=identifier,
-            )
+            # Instagrapi 2.x: login() ni verification_code bilan qayta chaqirish
+            cl.login(uname, pwd, verification_code=code.strip())
             user_info = cl.account_info()
             session = json.dumps(cl.get_settings())
             return {
@@ -135,7 +132,7 @@ async def complete_2fa(username: str, code: str) -> dict:
             }
         except Exception as e:
             err = str(e).lower()
-            if "invalid" in err or "wrong" in err or "incorrect" in err:
+            if "invalid" in err or "wrong" in err or "incorrect" in err or "bad" in err:
                 return {"success": False, "error": "Noto'g'ri 2FA kod. Authenticatordagi yangi kodni kiriting."}
             return {"success": False, "error": str(e)}
 
