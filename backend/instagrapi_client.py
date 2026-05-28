@@ -27,6 +27,9 @@ _executor = ThreadPoolExecutor(max_workers=3)
 # Active klientlar keshi: account_id → Client
 _clients: dict = {}
 
+# 2FA kutayotgan klientlar: username → {"client": cl, "two_factor_identifier": "..."}
+_pending_2fa: dict = {}
+
 
 async def _run(func, *args):
     """Sinxron funksiyani async context da ishlatish"""
@@ -39,18 +42,20 @@ def _make_client():
     if not INSTAGRAPI_AVAILABLE:
         raise RuntimeError("instagrapi o'rnatilmagan")
     cl = Client()
-    cl.delay_range = [1, 3]  # so'rovlar orasida 1-3 soniya kutish
+    cl.delay_range = [1, 3]
     return cl
 
 
 async def login_new(username: str, password: str) -> dict:
     """
     Yangi Instagram akkauntga kirish.
-    Returns: {"success": True, "ig_user_id": "...", "session": "...json..."}
-             {"success": False, "error": "...", "need_2fa": True/False}
+    Returns:
+      {"success": True, "ig_user_id": "...", "session": "..."}
+      {"success": False, "need_2fa": True, "two_factor_identifier": "..."}
+      {"success": False, "error": "..."}
     """
     if not INSTAGRAPI_AVAILABLE:
-        return {"success": False, "error": "instagrapi server da o'rnatilmagan. Admin bilan bog'laning."}
+        return {"success": False, "error": "instagrapi server da o'rnatilmagan."}
 
     def _login():
         cl = _make_client()
@@ -66,33 +71,90 @@ async def login_new(username: str, password: str) -> dict:
                 "session": session,
                 "client": cl
             }
+        except TwoFactorRequired:
+            # 2FA identifier ni cl.last_json dan olamiz
+            two_factor_info = cl.last_json.get("two_factor_info", {})
+            identifier = two_factor_info.get("two_factor_identifier", "")
+            return {
+                "success": False,
+                "need_2fa": True,
+                "two_factor_identifier": identifier,
+                "client": cl,
+                "username": username.strip(),
+            }
         except BadPassword:
             return {"success": False, "error": "Noto'g'ri parol"}
-        except TwoFactorRequired:
-            return {"success": False, "error": "2FA yoqilgan — kod kiriting", "need_2fa": True}
         except ChallengeRequired:
-            return {"success": False, "error": "Instagram challenge talab qildi. Keyinroq urinib ko'ring yoki ilovada tasdiqlang."}
+            return {"success": False, "error": "Instagram tekshiruv talab qildi. Ilovada tasdiqlang yoki keyinroq urinib ko'ring."}
         except UserNotFound:
             return {"success": False, "error": "Foydalanuvchi topilmadi"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     result = await _run(_login)
-    if result.get("success") and result.get("client"):
-        # klientni keshlamiz — session yangilanadi
-        # account_id keyinroq bilib olinadi, username bilan saqlaymiz
-        pass
+
+    # 2FA holatida klientni vaqtincha saqlaymiz
+    if result.get("need_2fa") and result.get("client"):
+        _pending_2fa[result["username"]] = {
+            "client": result["client"],
+            "two_factor_identifier": result["two_factor_identifier"],
+        }
+        result.pop("client", None)
+
+    result.pop("client", None)
     return result
 
 
-async def get_client(account: dict) -> Client | None:
+async def complete_2fa(username: str, code: str) -> dict:
+    """
+    2FA kodini yuborib loginni yakunlash.
+    username: login_new() ga yuborilgan username
+    code: authenticator ilovasidagi 6 xonali kod
+    """
+    pending = _pending_2fa.get(username.strip())
+    if not pending:
+        return {"success": False, "error": "Login sessiyasi topilmadi. Qaytadan username+parol kiriting."}
+
+    def _verify():
+        cl = pending["client"]
+        identifier = pending["two_factor_identifier"]
+        try:
+            cl.two_factor_login(
+                verification_code=code.strip(),
+                two_factor_identifier=identifier,
+            )
+            user_info = cl.account_info()
+            session = json.dumps(cl.get_settings())
+            return {
+                "success": True,
+                "ig_user_id": str(user_info.pk),
+                "username": user_info.username,
+                "full_name": user_info.full_name,
+                "session": session,
+                "client": cl,
+            }
+        except Exception as e:
+            err = str(e).lower()
+            if "invalid" in err or "wrong" in err or "incorrect" in err:
+                return {"success": False, "error": "Noto'g'ri 2FA kod. Authenticatordagi yangi kodni kiriting."}
+            return {"success": False, "error": str(e)}
+
+    result = await _run(_verify)
+
+    if result.get("success"):
+        _pending_2fa.pop(username.strip(), None)
+        result.pop("client", None)
+
+    return result
+
+
+async def get_client(account: dict):
     """
     Mavjud akkaunt uchun klient olish (keshdan yoki sessiyadan)
     account: DB dagi accounts qatori (dict)
     """
     account_id = account["id"]
 
-    # Keshda bor?
     if account_id in _clients:
         return _clients[account_id]
 
@@ -106,7 +168,8 @@ async def get_client(account: dict) -> Client | None:
             cl = _make_client()
             settings = json.loads(session_json)
             cl.set_settings(settings)
-            cl.login(username, "")  # sessiya bilan tiklash
+            # Sessiya haqiqiyligini tekshirish — login chaqirmay
+            cl.get_timeline_feed()
             return cl
         except Exception as e:
             print(f"❌ Sessiya tiklanmadi ({username}): {e}")
@@ -118,7 +181,7 @@ async def get_client(account: dict) -> Client | None:
     return cl
 
 
-async def refresh_session(account: dict) -> str | None:
+async def refresh_session(account: dict):
     """Sessiyani yangilab, JSON string qaytarish"""
     cl = await get_client(account)
     if not cl:
@@ -140,10 +203,7 @@ def clear_client_cache(account_id: int):
 # ══════════════════════════════════
 
 async def ig_send_dm(account: dict, recipient_ig_id: str, text: str) -> dict:
-    """
-    Instagram DM yuborish (instagrapi orqali)
-    recipient_ig_id: string raqam (Instagram user ID)
-    """
+    """Instagram DM yuborish"""
     cl = await get_client(account)
     if not cl:
         return {"error": "Klient topilmadi — qayta login qiling"}
@@ -151,7 +211,6 @@ async def ig_send_dm(account: dict, recipient_ig_id: str, text: str) -> dict:
     def _send():
         try:
             result = cl.direct_send(text, user_ids=[int(recipient_ig_id)])
-            # instagrapi 1.x va 2.x uchun id olish
             rid = getattr(result, "id", None) or getattr(result, "thread_id", None) or str(result)
             return {"success": True, "thread_id": str(rid)}
         except Exception as e:
@@ -229,38 +288,18 @@ async def ig_get_recent_dms(account: dict, amount: int = 10) -> list:
             for thread in threads:
                 if not thread.messages:
                     continue
-                for msg in thread.messages[:3]:  # har threaddan oxirgi 3 xabar
+                for msg in thread.messages[:3]:
                     if msg.item_type != "text":
                         continue
-                    sender_id = str(msg.user_id)
                     messages.append({
                         "id": str(msg.id),
                         "text": msg.text or "",
-                        "sender_id": sender_id,
+                        "sender_id": str(msg.user_id),
                         "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
                     })
             return messages
         except Exception as e:
             print(f"❌ ig_get_recent_dms: {e}")
             return []
-
-    return await _run(_get)
-
-
-async def ig_get_account_info(username: str, session_json: str) -> dict:
-    """Sessiya orqali akkaunt ma'lumotlarini olish"""
-    def _get():
-        try:
-            cl = _make_client()
-            cl.set_settings(json.loads(session_json))
-            info = cl.account_info()
-            return {
-                "id": str(info.pk),
-                "username": info.username,
-                "full_name": info.full_name,
-                "followers_count": info.follower_count,
-            }
-        except Exception as e:
-            return {"error": str(e)}
 
     return await _run(_get)

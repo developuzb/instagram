@@ -283,6 +283,8 @@ async function createAccount() {
   }
 }
 
+let _ig2faPendingUsername = null;
+
 async function _createAccountIG() {
   const username = document.getElementById('igLoginUsername').value.trim().replace('@', '');
   const password = document.getElementById('igLoginPassword').value;
@@ -294,18 +296,76 @@ async function _createAccountIG() {
   statusEl.style.display = 'block';
   statusEl.innerHTML = `<div class="info-box"><i class="fas fa-spinner fa-spin"></i><div>Instagram ga ulanmoqda... (30-60 soniya ketishi mumkin)</div></div>`;
 
+  const btn = document.getElementById('addAccountBtn');
+  btn.disabled = true;
+
   try {
-    const a = await api('POST', '/api/accounts/ig-login', { username, password });
+    const res = await api('POST', '/api/accounts/ig-login', { username, password });
+
+    // 2FA kerak
+    if (res.need_2fa) {
+      _ig2faPendingUsername = res.username || username;
+      document.getElementById('ig2faUsername').textContent = '@' + _ig2faPendingUsername;
+      document.getElementById('igStep1').style.display = 'none';
+      document.getElementById('igStep2').style.display = 'block';
+      document.querySelectorAll('.auth-tab').forEach(t => t.style.display = 'none');
+      statusEl.style.display = 'none';
+      btn.disabled = false;
+      btn.onclick = _submit2FA;
+      btn.innerHTML = '<i class="fas fa-key"></i> Kodni tasdiqlash';
+      return;
+    }
+
+    // Muvaffaqiyatli login
+    _resetIgLoginForm();
     closeModal('addAccountModal');
-    document.getElementById('igLoginUsername').value = '';
-    document.getElementById('igLoginPassword').value = '';
-    statusEl.style.display = 'none';
     await loadAccounts();
     await loadStats();
-    toast(`✅ @${a.username} ulandi! (instagrapi)`, 'success');
+    toast(`@${res.username} ulandi!`, 'success');
   } catch (e) {
     statusEl.innerHTML = `<div class="info-box warning"><i class="fas fa-exclamation-triangle"></i><div><strong>Xato:</strong> ${e.message}</div></div>`;
+    btn.disabled = false;
   }
+}
+
+async function _submit2FA() {
+  const code = document.getElementById('ig2faCode').value.trim().replace(/\s/g, '');
+  const statusEl = document.getElementById('igLoginStatus');
+  const btn = document.getElementById('addAccountBtn');
+
+  if (!code || code.length !== 6) return toast('6 xonali kodni kiriting!', 'error');
+
+  btn.disabled = true;
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = `<div class="info-box"><i class="fas fa-spinner fa-spin"></i><div>Kod tekshirilmoqda...</div></div>`;
+
+  try {
+    const res = await api('POST', '/api/accounts/ig-2fa', { username: _ig2faPendingUsername, code });
+    _resetIgLoginForm();
+    closeModal('addAccountModal');
+    await loadAccounts();
+    await loadStats();
+    toast(`@${res.username} ulandi! (2FA)`, 'success');
+  } catch (e) {
+    statusEl.innerHTML = `<div class="info-box warning"><i class="fas fa-exclamation-triangle"></i><div><strong>Xato:</strong> ${e.message}</div></div>`;
+    document.getElementById('ig2faCode').value = '';
+    btn.disabled = false;
+  }
+}
+
+function _resetIgLoginForm() {
+  _ig2faPendingUsername = null;
+  document.getElementById('igLoginUsername').value = '';
+  document.getElementById('igLoginPassword').value = '';
+  document.getElementById('ig2faCode').value = '';
+  document.getElementById('igLoginStatus').style.display = 'none';
+  document.getElementById('igStep1').style.display = 'block';
+  document.getElementById('igStep2').style.display = 'none';
+  document.querySelectorAll('.auth-tab').forEach(t => t.style.display = '');
+  const btn = document.getElementById('addAccountBtn');
+  btn.disabled = false;
+  btn.onclick = createAccount;
+  btn.innerHTML = '<i class="fab fa-instagram"></i> Ulash';
 }
 
 async function _createAccountToken() {
@@ -770,6 +830,7 @@ function openModal(id) {
 
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
+  if (id === 'addAccountModal') _resetIgLoginForm();
 }
 
 // ESC bilan modalni yopish

@@ -28,7 +28,7 @@ from database import (
     log_message, get_messages_log,
 )
 from instagrapi_client import (
-    login_new, get_client, clear_client_cache,
+    login_new, complete_2fa, get_client, clear_client_cache,
     ig_send_dm, ig_get_user_medias, ig_get_comments, ig_get_recent_dms
 )
 from instagram_api import (
@@ -141,6 +141,11 @@ class AccountLoginIG(BaseModel):
     password: str
 
 
+class AccountLogin2FA(BaseModel):
+    username: str
+    code: str
+
+
 @app.get("/api/accounts")
 async def api_get_accounts(auth=Depends(check_admin)):
     rows = await get_accounts()
@@ -177,14 +182,17 @@ async def api_ig_login(body: AccountLoginIG, auth=Depends(check_admin)):
     print(f"🔐 Instagram login: @{body.username}")
     result = await login_new(body.username, body.password)
 
-    if not result.get("success"):
-        need_2fa = result.get("need_2fa", False)
-        raise HTTPException(
-            status_code=400,
-            detail=result.get("error", "Login xatosi"),
-        )
+    if result.get("need_2fa"):
+        # 2FA kerak — frontendga bildirамиз
+        return JSONResponse(status_code=202, content={
+            "need_2fa": True,
+            "username": body.username,
+            "message": "2FA kod kerak — authenticator ilovasidagi kodni kiriting",
+        })
 
-    # Akkauntni DB ga saqlash
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Login xatosi"))
+
     account = await create_account(
         instagram_id=result["ig_user_id"],
         username=result["username"],
@@ -193,6 +201,27 @@ async def api_ig_login(body: AccountLoginIG, auth=Depends(check_admin)):
         auth_type="instagrapi"
     )
     print(f"✅ @{result['username']} ulandi (instagrapi)")
+    account.pop("ig_session", None)
+    return account
+
+
+@app.post("/api/accounts/ig-2fa")
+async def api_ig_2fa(body: AccountLogin2FA, auth=Depends(check_admin)):
+    """2FA kodini tekshirib loginni yakunlash"""
+    print(f"🔑 2FA verify: @{body.username} — kod: {body.code}")
+    result = await complete_2fa(body.username, body.code)
+
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "2FA xatosi"))
+
+    account = await create_account(
+        instagram_id=result["ig_user_id"],
+        username=result["username"],
+        ig_username=result["username"],
+        ig_session=result["session"],
+        auth_type="instagrapi"
+    )
+    print(f"✅ @{result['username']} 2FA bilan ulandi")
     account.pop("ig_session", None)
     return account
 
