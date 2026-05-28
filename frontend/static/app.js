@@ -232,9 +232,7 @@ function renderAccounts() {
         <td style="color:var(--text3);font-size:12px">${formatDate(a.created_at)}</td>
         <td>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-sm btn-ghost btn-icon" onclick="verifyToken(${a.id})" title="Token tekshirish">
-              <i class="fas fa-check-circle"></i>
-            </button>
+            ${a.auth_type !== 'instagrapi' ? `<button class="btn btn-sm btn-ghost btn-icon" onclick="verifyToken(${a.id})" title="Token tekshirish"><i class="fas fa-check-circle"></i></button>` : ''}
             <button class="btn btn-sm btn-danger btn-icon" onclick="deleteAccount(${a.id})" title="O'chirish">
               <i class="fas fa-trash"></i>
             </button>
