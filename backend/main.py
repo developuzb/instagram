@@ -57,6 +57,16 @@ _poll_stats = {
     "dms_sent": 0,
     "errors": 0,
 }
+# In-memory debug log (oxirgi 200 ta yozuv)
+_debug_log: list = []
+
+def _log(msg: str):
+    ts = datetime.datetime.utcnow().strftime("%H:%M:%S")
+    entry = f"[{ts}] {msg}"
+    print(entry)
+    _debug_log.append(entry)
+    if len(_debug_log) > 200:
+        _debug_log.pop(0)
 
 app = FastAPI(title="Instagram Chatbot Admin", version="1.0.0")
 
@@ -483,27 +493,33 @@ async def poll_comments(account: dict):
 async def _poll_comments_instagrapi(account: dict):
     """instagrapi orqali kommentariyalarni tekshirish"""
     global _poll_stats
+    uname = account.get("username", "?")
     try:
         medias = await ig_get_user_medias(account, amount=10)
         media_map = {m["shortcode"]: m["id"] for m in medias}
         for shortcode, num_id in media_map.items():
             await update_post_media_id(shortcode, num_id)
+        _log(f"📷 @{uname}: {len(medias)} media topildi")
     except Exception as e:
-        print(f"❌ instagrapi media xatosi: {e}")
+        _log(f"❌ @{uname} media xatosi: {e}")
         _poll_stats["errors"] += 1
         return
 
     posts = await get_posts(account["id"])
+    monitored = [p for p in posts if p.get("is_monitoring")]
+    _log(f"👁 @{uname}: {len(monitored)} post monitoring da")
     for post in posts:
         if not post.get("is_monitoring"):
             continue
         media_id = post.get("media_numeric_id") or media_map.get(post["post_id"])
         if not media_id:
+            _log(f"⚠️ @{uname}: post {post['post_id']} — media_id topilmadi (50 ta eng yangi postdan biri emas?)")
             continue
         try:
             comments = await ig_get_comments(account, str(media_id), amount=20)
+            _log(f"💬 @{uname} post {post['post_id']}: {len(comments)} kommentariya")
         except Exception as e:
-            print(f"❌ instagrapi comments xatosi: {e}")
+            _log(f"❌ @{uname} comments xatosi: {e}")
             continue
         await _process_new_comments(comments, media_id, account)
 
@@ -552,12 +568,15 @@ async def _process_new_comments(comments: list, media_id: str, account: dict):
             if ctime_str:
                 ctime = datetime.datetime.fromisoformat(ctime_str.replace("Z", "+00:00"))
                 ctime_utc = ctime.replace(tzinfo=None)
-                if ctime_utc < _server_start:
+                # 2 daqiqa buferi — deploy vaqtidagi kommentariyalar ham o'tsin
+                filter_time = _server_start - datetime.timedelta(minutes=2)
+                if ctime_utc < filter_time:
+                    _log(f"⏭ Eski kommentariya o'tkazildi: '{comment.get('text','')}' ({ctime_str})")
                     continue
         except Exception:
             pass
         _poll_stats["comments_found"] += 1
-        print(f"🆕 Yangi kommentariya: '{comment.get('text', '')}' — @{account.get('username')}")
+        _log(f"🆕 YANGI kommentariya: '{comment.get('text', '')}' — @{account.get('username')}")
         from_user = comment.get("from", {})
         value = {
             "from": from_user,
@@ -731,7 +750,7 @@ async def handle_comment_event(value: dict, accounts: list):
     if not sender_id or not comment_text:
         return
 
-    print(f"💬 Yangi kommentariya: '{comment_text}' from {sender_id}")
+    _log(f"💬 Kommentariya: '{comment_text}' from {sender_id}")
 
     for account in accounts:
         if not account.get("is_active"):
@@ -739,9 +758,10 @@ async def handle_comment_event(value: dict, accounts: list):
 
         trigger = await find_matching_trigger(account["id"], comment_text, trigger_type='comment')
         if not trigger:
+            _log(f"⚠️ @{account.get('username')}: trigger topilmadi ('{comment_text}')")
             continue
 
-        print(f"✅ Trigger topildi: '{trigger['keyword']}' → DM yuborilmoqda...")
+        _log(f"✅ Trigger topildi: '{trigger['keyword']}' → DM yuborilmoqda @{sender_id}...")
 
         # Subscriber saqlash
         sub_id = await upsert_subscriber(account["id"], sender_id, sender_name)
@@ -751,6 +771,7 @@ async def handle_comment_event(value: dict, accounts: list):
 
         # DM yuborish (instagrapi yoki token)
         result = await _smart_send_dm(account, sender_id, final_message)
+        _log(f"📤 DM natija: {result}")
 
         status = "sent" if result.get("success") or "message_id" in result or "recipient_id" in result or "thread_id" in result else "failed"
         await log_message(
@@ -832,6 +853,43 @@ async def api_polling_trigger(auth=Depends(check_admin)):
     """Qo'lda polling ishga tushirish"""
     asyncio.create_task(poll_all_accounts())
     return {"success": True, "message": "Polling boshlandi"}
+
+
+@app.get("/api/debug/logs")
+async def api_debug_logs(auth=Depends(check_admin)):
+    """Oxirgi polling loglari"""
+    return {"logs": list(reversed(_debug_log[-50:]))}
+
+
+@app.get("/api/debug/status")
+async def api_debug_status(auth=Depends(check_admin)):
+    """To'liq tashxis: akkaunt sessiya + postlar + triggerlar"""
+    accounts = await get_accounts()
+    result = []
+    for acc in accounts:
+        posts = await get_posts(acc["id"])
+        triggers = await get_triggers(acc["id"])
+        from instagrapi_client import _clients, INSTAGRAPI_AVAILABLE
+        session_cached = acc["id"] in _clients
+        result.append({
+            "account": acc.get("username"),
+            "auth_type": acc.get("auth_type"),
+            "is_active": acc.get("is_active"),
+            "instagrapi_available": INSTAGRAPI_AVAILABLE,
+            "session_cached": session_cached,
+            "has_session": bool(acc.get("ig_session")),
+            "posts_total": len(posts),
+            "posts_monitoring": sum(1 for p in posts if p.get("is_monitoring")),
+            "posts": [{"id": p["post_id"], "monitoring": p.get("is_monitoring"), "media_id": p.get("media_numeric_id")} for p in posts],
+            "triggers_total": len(triggers),
+            "triggers_active": sum(1 for t in triggers if t.get("is_active")),
+            "triggers": [{"keyword": t["keyword"], "match_all": t.get("match_all"), "type": t.get("trigger_type"), "active": t.get("is_active")} for t in triggers],
+        })
+    return {
+        "server_start": _server_start.isoformat(),
+        "polls_done": _poll_stats["polls_done"],
+        "accounts": result,
+    }
 
 
 @app.put("/api/polling/interval")

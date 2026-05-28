@@ -165,8 +165,11 @@ async def get_client(account: dict):
             cl = _make_client()
             settings = json.loads(session_json)
             cl.set_settings(settings)
-            # Sessiya haqiqiyligini tekshirish — login chaqirmay
-            cl.get_timeline_feed()
+            # user_id bo'lsa sessiya yuklangan deb hisoblaymiz
+            if not cl.user_id:
+                print(f"⚠️ Sessiya yuklanmadi ({username}): user_id yo'q")
+                return None
+            print(f"✅ Sessiya tiklandi: @{username} (user_id={cl.user_id})")
             return cl
         except Exception as e:
             print(f"❌ Sessiya tiklanmadi ({username}): {e}")
