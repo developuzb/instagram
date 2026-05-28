@@ -7,11 +7,19 @@ Token, Meta App, Developer account SHART EMAS
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from instagrapi import Client
-from instagrapi.exceptions import (
-    BadPassword, TwoFactorRequired,
-    ChallengeRequired, UserNotFound
-)
+
+try:
+    from instagrapi import Client
+    from instagrapi.exceptions import (
+        BadPassword, TwoFactorRequired,
+        ChallengeRequired, UserNotFound
+    )
+    INSTAGRAPI_AVAILABLE = True
+except ImportError as _e:
+    print(f"⚠️ instagrapi o'rnatilmagan: {_e}. IG-login ishlamaydi.")
+    INSTAGRAPI_AVAILABLE = False
+    Client = None
+    BadPassword = TwoFactorRequired = ChallengeRequired = UserNotFound = Exception
 
 # Sinxron funksiyalar uchun thread pool
 _executor = ThreadPoolExecutor(max_workers=3)
@@ -26,8 +34,10 @@ async def _run(func, *args):
     return await loop.run_in_executor(_executor, func, *args)
 
 
-def _make_client() -> Client:
+def _make_client():
     """Yangi instagrapi Client yaratish"""
+    if not INSTAGRAPI_AVAILABLE:
+        raise RuntimeError("instagrapi o'rnatilmagan")
     cl = Client()
     cl.delay_range = [1, 3]  # so'rovlar orasida 1-3 soniya kutish
     return cl
@@ -39,6 +49,9 @@ async def login_new(username: str, password: str) -> dict:
     Returns: {"success": True, "ig_user_id": "...", "session": "...json..."}
              {"success": False, "error": "...", "need_2fa": True/False}
     """
+    if not INSTAGRAPI_AVAILABLE:
+        return {"success": False, "error": "instagrapi server da o'rnatilmagan. Admin bilan bog'laning."}
+
     def _login():
         cl = _make_client()
         try:
