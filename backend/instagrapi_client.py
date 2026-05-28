@@ -9,8 +9,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from instagrapi import Client
 from instagrapi.exceptions import (
-    LoginRequired, BadPassword, TwoFactorRequired,
-    ChallengeRequired, UserNotFound, ClientError
+    BadPassword, TwoFactorRequired,
+    ChallengeRequired, UserNotFound
 )
 
 # Sinxron funksiyalar uchun thread pool
