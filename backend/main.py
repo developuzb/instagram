@@ -516,8 +516,12 @@ async def _poll_comments_instagrapi(account: dict):
             _log(f"⚠️ @{uname}: post {post['post_id']} — media_id topilmadi (50 ta eng yangi postdan biri emas?)")
             continue
         try:
-            comments = await ig_get_comments(account, str(media_id), amount=20)
-            _log(f"💬 @{uname} post {post['post_id']}: {len(comments)} kommentariya")
+            comments = await ig_get_comments(account, str(media_id), amount=50)
+            if comments:
+                newest_ts = comments[0].get("timestamp", "?")
+                _log(f"💬 @{uname} post {post['post_id']}: {len(comments)} kommentariya (eng yangi: {newest_ts})")
+            else:
+                _log(f"💬 @{uname} post {post['post_id']}: 0 kommentariya")
         except Exception as e:
             _log(f"❌ @{uname} comments xatosi: {e}")
             continue
