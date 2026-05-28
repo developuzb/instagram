@@ -223,7 +223,12 @@ function renderAccounts() {
         <td style="color:var(--text3)">${a.id}</td>
         <td><strong>@${a.username}</strong></td>
         <td style="font-family:monospace;font-size:12px;color:var(--text3)">${a.instagram_id}</td>
-        <td><span class="badge ${a.is_active ? 'badge-green' : 'badge-gray'}">${a.is_active ? '✅ Faol' : '⏸️ To\'xtatilgan'}</span></td>
+        <td>
+          <span class="badge ${a.is_active ? 'badge-green' : 'badge-gray'}">${a.is_active ? '✅ Faol' : '⏸️ To\'xtatilgan'}</span>
+          <span class="badge ${a.auth_type === 'instagrapi' ? 'badge-purple' : 'badge-blue'}" style="margin-left:4px;font-size:10px">
+            ${a.auth_type === 'instagrapi' ? '🔐 Login' : '🔑 Token'}
+          </span>
+        </td>
         <td style="color:var(--text3);font-size:12px">${formatDate(a.created_at)}</td>
         <td>
           <div style="display:flex;gap:6px">
@@ -251,7 +256,59 @@ function populateAccountSelects() {
   });
 }
 
+let _currentAuthTab = 'ig';
+
+function switchAuthTab(tab) {
+  _currentAuthTab = tab;
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  event.target.closest('.auth-tab').classList.add('active');
+  document.getElementById('authTabIg').style.display = tab === 'ig' ? '' : 'none';
+  document.getElementById('authTabToken').style.display = tab === 'token' ? '' : 'none';
+}
+
 async function createAccount() {
+  const btn = document.getElementById('addAccountBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ulanmoqda...';
+
+  try {
+    if (_currentAuthTab === 'ig') {
+      await _createAccountIG();
+    } else {
+      await _createAccountToken();
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fab fa-instagram"></i> Ulash';
+  }
+}
+
+async function _createAccountIG() {
+  const username = document.getElementById('igLoginUsername').value.trim().replace('@', '');
+  const password = document.getElementById('igLoginPassword').value;
+  const statusEl = document.getElementById('igLoginStatus');
+
+  if (!username) return toast('Foydalanuvchi nomi kiriting!', 'error');
+  if (!password) return toast('Parolni kiriting!', 'error');
+
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = `<div class="info-box"><i class="fas fa-spinner fa-spin"></i><div>Instagram ga ulanmoqda... (30-60 soniya ketishi mumkin)</div></div>`;
+
+  try {
+    const a = await api('POST', '/api/accounts/ig-login', { username, password });
+    closeModal('addAccountModal');
+    document.getElementById('igLoginUsername').value = '';
+    document.getElementById('igLoginPassword').value = '';
+    statusEl.style.display = 'none';
+    await loadAccounts();
+    await loadStats();
+    toast(`✅ @${a.username} ulandi! (instagrapi)`, 'success');
+  } catch (e) {
+    statusEl.innerHTML = `<div class="info-box warning"><i class="fas fa-exclamation-triangle"></i><div><strong>Xato:</strong> ${e.message}</div></div>`;
+  }
+}
+
+async function _createAccountToken() {
   const token = document.getElementById('newAccountToken').value.trim();
   if (!token) return toast('Token kiriting!', 'error');
   try {
@@ -261,7 +318,7 @@ async function createAccount() {
     document.getElementById('newAccountToken').value = '';
     await loadAccounts();
     await loadStats();
-    toast(`✅ @${a.username} akkaunt qo'shildi!`, 'success');
+    toast(`✅ @${a.username} qo'shildi!`, 'success');
   } catch (e) {
     toast('❌ ' + e.message, 'error');
   }

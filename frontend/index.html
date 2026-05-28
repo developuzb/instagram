@@ -411,27 +411,65 @@
 <div id="addAccountModal" class="modal">
   <div class="modal-content">
     <div class="modal-header">
-      <h3><i class="fab fa-instagram"></i> Akkaunt qo'shish</h3>
+      <h3><i class="fab fa-instagram"></i> Instagram Akkaunt ulash</h3>
       <button onclick="closeModal('addAccountModal')" class="modal-close"><i class="fas fa-times"></i></button>
     </div>
     <div class="modal-body">
-      <div class="info-box">
-        <i class="fas fa-info-circle"></i>
-        <div>
-          Instagram Business akkauntingiz Facebook Page ga ulangan bo'lishi kerak.
-          <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> dan
-          <code>pages_messaging, instagram_manage_messages, instagram_manage_comments</code> permissionlari bilan token oling.
-        </div>
+      <!-- Tab switcher -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchAuthTab('ig')">
+          <i class="fab fa-instagram"></i> Login + Parol
+        </button>
+        <button class="auth-tab" onclick="switchAuthTab('token')">
+          <i class="fas fa-key"></i> Access Token
+        </button>
       </div>
-      <div class="form-group">
-        <label>Page Access Token *</label>
-        <textarea id="newAccountToken" rows="3" placeholder="EAAxxxxxx..."></textarea>
+
+      <!-- Instagram Login tab -->
+      <div id="authTabIg" class="auth-panel">
+        <div class="info-box" style="margin-top:14px">
+          <i class="fas fa-shield-alt"></i>
+          <div>
+            <strong>Xavfsiz ulanish</strong> — parol faqat bir marta ishlatiladi, keyin sessiya saqlanadi.
+            Instagram Business yoki Creator akkaunt bo'lishi kerak.
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Instagram foydalanuvchi nomi *</label>
+          <div class="input-group" style="margin-bottom:0">
+            <i class="fas fa-at"></i>
+            <input type="text" id="igLoginUsername" placeholder="username (@ siz)" autocomplete="username">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Parol *</label>
+          <div class="input-group" style="margin-bottom:0">
+            <i class="fas fa-lock"></i>
+            <input type="password" id="igLoginPassword" placeholder="Instagram paroli" autocomplete="current-password">
+          </div>
+        </div>
+        <div id="igLoginStatus" style="display:none;margin-top:10px"></div>
+      </div>
+
+      <!-- Token tab -->
+      <div id="authTabToken" class="auth-panel" style="display:none">
+        <div class="info-box" style="margin-top:14px">
+          <i class="fas fa-info-circle"></i>
+          <div>
+            <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> dan
+            <code>pages_messaging, instagram_manage_messages, instagram_manage_comments</code> bilan token oling.
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Page Access Token *</label>
+          <textarea id="newAccountToken" rows="3" placeholder="EAAxxxxxx..."></textarea>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addAccountModal')">Bekor qilish</button>
-      <button class="btn btn-primary" onclick="createAccount()">
-        <i class="fas fa-plus"></i> Qo'shish
+      <button class="btn btn-primary" id="addAccountBtn" onclick="createAccount()">
+        <i class="fab fa-instagram"></i> Ulash
       </button>
     </div>
   </div>

@@ -20,12 +20,16 @@ import asyncio
 
 from database import (
     init_db, get_stats,
-    get_accounts, create_account, delete_account,
+    get_accounts, create_account, delete_account, update_account_session,
     get_triggers, create_trigger, update_trigger, delete_trigger, find_matching_trigger,
     get_posts, add_post, toggle_post_monitoring, update_post_media_id,
     get_subscribers,
     upsert_subscriber,
     log_message, get_messages_log,
+)
+from instagrapi_client import (
+    login_new, get_client, clear_client_cache,
+    ig_send_dm, ig_get_user_medias, ig_get_comments, ig_get_recent_dms
 )
 from instagram_api import (
     send_dm, get_instagram_account_info,
@@ -129,40 +133,73 @@ async def api_stats(auth=Depends(check_admin)):
 # ════════════════════════════════════════════════
 
 class AccountCreate(BaseModel):
-    page_access_token: str
+    page_access_token: Optional[str] = None
+
+
+class AccountLoginIG(BaseModel):
+    username: str
+    password: str
 
 
 @app.get("/api/accounts")
 async def api_get_accounts(auth=Depends(check_admin)):
-    return await get_accounts()
+    rows = await get_accounts()
+    # Parolni va session ni frontendga yubormaymiz
+    for r in rows:
+        r.pop("ig_session", None)
+    return rows
 
 
 @app.post("/api/accounts")
 async def api_create_account(body: AccountCreate, auth=Depends(check_admin)):
-    # Token ni tekshirish
+    if not body.page_access_token:
+        raise HTTPException(status_code=400, detail="Token kiriting yoki /api/accounts/ig-login ishlating")
     verify = await verify_access_token(body.page_access_token)
     if not verify.get("valid"):
-        raise HTTPException(status_code=400, detail=f"Token noto'g'ri: {verify.get('error', 'Noma\'lum xato')}")
-
-    # Instagram akkaunt ma'lumotlarini olish
+        raise HTTPException(status_code=400, detail=f"Token noto'g'ri: {verify.get('error', '')}")
     ig_info = await get_instagram_account_info(body.page_access_token)
     if "error" in ig_info:
         raise HTTPException(status_code=400, detail=ig_info["error"])
-
-    # Facebook Page ID olish (DM polling uchun)
     fb_page_id = await get_page_id(body.page_access_token)
-
     account = await create_account(
         instagram_id=ig_info.get("id"),
         username=ig_info.get("username", ig_info.get("name", "Unknown")),
         page_access_token=body.page_access_token,
-        page_id=fb_page_id
+        page_id=fb_page_id,
+        auth_type="token"
     )
+    return account
+
+
+@app.post("/api/accounts/ig-login")
+async def api_ig_login(body: AccountLoginIG, auth=Depends(check_admin)):
+    """Instagram username + parol bilan akkaunt ulash"""
+    print(f"🔐 Instagram login: @{body.username}")
+    result = await login_new(body.username, body.password)
+
+    if not result.get("success"):
+        need_2fa = result.get("need_2fa", False)
+        raise HTTPException(
+            status_code=400,
+            detail=result.get("error", "Login xatosi"),
+        )
+
+    # Akkauntni DB ga saqlash
+    account = await create_account(
+        instagram_id=result["ig_user_id"],
+        username=result["username"],
+        ig_username=result["username"],
+        ig_session=result["session"],
+        auth_type="instagrapi"
+    )
+    print(f"✅ @{result['username']} ulandi (instagrapi)")
+    account.pop("ig_session", None)
     return account
 
 
 @app.delete("/api/accounts/{account_id}")
 async def api_delete_account(account_id: int, auth=Depends(check_admin)):
+    clear_client_cache(account_id)
     await delete_account(account_id)
     return {"success": True}
 
@@ -306,9 +343,9 @@ async def api_test_dm(body: TestDMRequest, auth=Depends(check_admin)):
     if not account:
         raise HTTPException(status_code=404, detail="Akkaunt topilmadi")
 
-    result = await send_dm(body.recipient_id, body.message, account["page_access_token"])
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"]["message"])
+    result = await _smart_send_dm(account, body.recipient_id, body.message)
+    if "error" in result and not result.get("success"):
+        raise HTTPException(status_code=400, detail=str(result.get("error", "Xato")))
     return {"success": True, "result": result}
 
 
@@ -406,23 +443,27 @@ async def poll_all_accounts():
 async def poll_comments(account: dict):
     """Yangi kommentariyalarni tekshirish"""
     global _poll_stats
-    ig_user_id = account.get("instagram_id")
-    token = account.get("page_access_token")
-    if not ig_user_id or not token:
-        return
+    auth_type = account.get("auth_type", "token")
 
-    # Barcha postlar media_numeric_id larini yangilash
+    if auth_type == "instagrapi":
+        await _poll_comments_instagrapi(account)
+    else:
+        await _poll_comments_token(account)
+
+
+async def _poll_comments_instagrapi(account: dict):
+    """instagrapi orqali kommentariyalarni tekshirish"""
+    global _poll_stats
     try:
-        media_list = await get_user_media(ig_user_id, token)
-        media_map = {m["shortcode"]: m["id"] for m in media_list}
+        medias = await ig_get_user_medias(account, amount=10)
+        media_map = {m["shortcode"]: m["id"] for m in medias}
         for shortcode, num_id in media_map.items():
             await update_post_media_id(shortcode, num_id)
     except Exception as e:
-        print(f"❌ Media list xatosi (@{account.get('username')}): {e}")
+        print(f"❌ instagrapi media xatosi: {e}")
         _poll_stats["errors"] += 1
         return
 
-    # Kuzatiladigan postlar
     posts = await get_posts(account["id"])
     for post in posts:
         if not post.get("is_monitoring"):
@@ -430,50 +471,128 @@ async def poll_comments(account: dict):
         media_id = post.get("media_numeric_id") or media_map.get(post["post_id"])
         if not media_id:
             continue
+        try:
+            comments = await ig_get_comments(account, str(media_id), amount=20)
+        except Exception as e:
+            print(f"❌ instagrapi comments xatosi: {e}")
+            continue
+        await _process_new_comments(comments, media_id, account)
 
+
+async def _poll_comments_token(account: dict):
+    """Graph API token orqali kommentariyalarni tekshirish"""
+    global _poll_stats
+    ig_user_id = account.get("instagram_id")
+    token = account.get("page_access_token")
+    if not ig_user_id or not token:
+        return
+    try:
+        media_list = await get_user_media(ig_user_id, token)
+        media_map = {m["shortcode"]: m["id"] for m in media_list}
+        for shortcode, num_id in media_map.items():
+            await update_post_media_id(shortcode, num_id)
+    except Exception as e:
+        print(f"❌ Token media xatosi: {e}")
+        _poll_stats["errors"] += 1
+        return
+    posts = await get_posts(account["id"])
+    for post in posts:
+        if not post.get("is_monitoring"):
+            continue
+        media_id = post.get("media_numeric_id") or media_map.get(post["post_id"])
+        if not media_id:
+            continue
         try:
             comments = await get_media_comments(media_id, token, limit=20)
         except Exception as e:
-            print(f"❌ Comments xatosi ({media_id}): {e}")
+            print(f"❌ Token comments xatosi: {e}")
             continue
+        await _process_new_comments(comments, media_id, account)
 
-        for comment in reversed(comments):  # eskidan yangi tartibda
-            cid = comment.get("id")
-            if not cid or cid in _processed_comment_ids:
-                continue
-            _processed_comment_ids.add(cid)
 
-            # Server ishga tushishidan eski kommentariyani o'tkaz
-            try:
-                ctime_str = comment.get("timestamp", "")
-                if ctime_str:
-                    ctime = datetime.datetime.fromisoformat(ctime_str.replace("Z", "+00:00"))
-                    ctime_utc = ctime.replace(tzinfo=None)
-                    if ctime_utc < _server_start:
-                        continue  # eski kommentariya — o'tkaz
-            except Exception:
-                pass
-
-            _poll_stats["comments_found"] += 1
-            print(f"🆕 Yangi kommentariya (polling): '{comment.get('text', '')}' — @{account.get('username')}")
-
-            from_user = comment.get("from", {})
-            value = {
-                "from": from_user,
-                "text": comment.get("text", ""),
-                "media": {"id": media_id}
-            }
-            asyncio.create_task(handle_comment_event(value, [account]))
+async def _process_new_comments(comments: list, media_id: str, account: dict):
+    """Yangi kommentariyalarni qayta ishlash (instagrapi va token uchun umumiy)"""
+    global _poll_stats
+    for comment in reversed(comments):
+        cid = comment.get("id")
+        if not cid or cid in _processed_comment_ids:
+            continue
+        _processed_comment_ids.add(cid)
+        try:
+            ctime_str = comment.get("timestamp", "")
+            if ctime_str:
+                ctime = datetime.datetime.fromisoformat(ctime_str.replace("Z", "+00:00"))
+                ctime_utc = ctime.replace(tzinfo=None)
+                if ctime_utc < _server_start:
+                    continue
+        except Exception:
+            pass
+        _poll_stats["comments_found"] += 1
+        print(f"🆕 Yangi kommentariya: '{comment.get('text', '')}' — @{account.get('username')}")
+        from_user = comment.get("from", {})
+        value = {
+            "from": from_user,
+            "text": comment.get("text", ""),
+            "media": {"id": str(media_id)}
+        }
+        asyncio.create_task(handle_comment_event(value, [account]))
 
 
 async def poll_dms(account: dict):
     """Yangi DM larni tekshirish"""
     global _poll_stats
+    auth_type = account.get("auth_type", "token")
+
+    if auth_type == "instagrapi":
+        await _poll_dms_instagrapi(account)
+    else:
+        await _poll_dms_token(account)
+
+
+async def _poll_dms_instagrapi(account: dict):
+    """instagrapi orqali DM larni tekshirish"""
+    try:
+        messages = await ig_get_recent_dms(account, amount=10)
+    except Exception as e:
+        print(f"❌ instagrapi DM polling: {e}")
+        return
+
+    ig_user_id = account.get("instagram_id", "")
+    for msg in messages:
+        mid = msg.get("id")
+        if not mid or mid in _processed_dm_ids:
+            continue
+        _processed_dm_ids.add(mid)
+
+        # Server ishga tushishidan eski
+        try:
+            mtime_str = msg.get("timestamp", "")
+            if mtime_str:
+                mtime = datetime.datetime.fromisoformat(mtime_str.replace("Z", "+00:00"))
+                mtime_utc = mtime.replace(tzinfo=None)
+                if mtime_utc < _server_start:
+                    continue
+        except Exception:
+            pass
+
+        sender_id = msg.get("sender_id", "")
+        if not sender_id or sender_id == ig_user_id:
+            continue  # o'z xabarlarimiz
+
+        msg_text = msg.get("text", "")
+        if not msg_text:
+            continue
+
+        print(f"📩 Yangi DM (instagrapi): '{msg_text}' from {sender_id}")
+        event = {"sender": {"id": sender_id}, "message": {"text": msg_text}}
+        asyncio.create_task(handle_message_event(event, [account]))
+
+
+async def _poll_dms_token(account: dict):
+    """Graph API token orqali DM larni tekshirish"""
     token = account.get("page_access_token")
     page_id = account.get("page_id")
-
     if not page_id:
-        # page_id saqlanmagan — bir marta olib DB ga yozamiz
         try:
             pid = await get_page_id(token)
             if pid:
@@ -487,16 +606,13 @@ async def poll_dms(account: dict):
                 page_id = pid
         except Exception:
             return
-
     if not page_id:
         return
-
     try:
         conversations = await get_ig_conversations(page_id, token)
     except Exception as e:
-        print(f"❌ DM polling xatosi: {e}")
+        print(f"❌ Token DM polling: {e}")
         return
-
     for conv in conversations:
         messages = conv.get("messages", {}).get("data", [])
         for msg in reversed(messages):
@@ -504,32 +620,23 @@ async def poll_dms(account: dict):
             if not mid or mid in _processed_dm_ids:
                 continue
             _processed_dm_ids.add(mid)
-
-            # Server ishga tushishidan eski xabarni o'tkaz
             try:
                 mtime_str = msg.get("created_time", "")
                 if mtime_str:
                     mtime = datetime.datetime.fromisoformat(mtime_str.replace("Z", "+00:00"))
-                    mtime_utc = mtime.replace(tzinfo=None)
-                    if mtime_utc < _server_start:
+                    if mtime.replace(tzinfo=None) < _server_start:
                         continue
             except Exception:
                 pass
-
             from_info = msg.get("from", {})
             sender_id = from_info.get("id")
             if not sender_id or sender_id == page_id:
-                continue  # o'zimizning xabarlarga javob berma
-
+                continue
             msg_text = msg.get("message", "")
             if not msg_text:
                 continue
-
-            print(f"📩 Yangi DM (polling): '{msg_text}' from {sender_id}")
-            event = {
-                "sender": {"id": sender_id},
-                "message": {"text": msg_text}
-            }
+            print(f"📩 Yangi DM (token): '{msg_text}' from {sender_id}")
+            event = {"sender": {"id": sender_id}, "message": {"text": msg_text}}
             asyncio.create_task(handle_message_event(event, [account]))
 
 
@@ -563,6 +670,16 @@ async def process_webhook(data: dict):
         print(f"❌ Webhook ishlov berish xatosi: {e}")
         import traceback
         traceback.print_exc()
+
+
+async def _smart_send_dm(account: dict, recipient_id: str, message: str) -> dict:
+    """instagrapi yoki token orqali DM yuborish"""
+    auth_type = account.get("auth_type", "token")
+    if auth_type == "instagrapi":
+        return await ig_send_dm(account, recipient_id, message)
+    else:
+        token = account.get("page_access_token", "")
+        return await send_dm(recipient_id, message, token)
 
 
 def apply_template(message: str, name: str = "", username: str = "") -> str:
@@ -603,11 +720,10 @@ async def handle_comment_event(value: dict, accounts: list):
         # Shablon o'zgaruvchilarini qo'llash
         final_message = apply_template(trigger["reply_message"], sender_name, sender_username)
 
-        # DM yuborish
-        result = await send_dm(sender_id, final_message, account["page_access_token"])
+        # DM yuborish (instagrapi yoki token)
+        result = await _smart_send_dm(account, sender_id, final_message)
 
-        # Log saqlash
-        status = "sent" if "message_id" in result or "recipient_id" in result else "failed"
+        status = "sent" if result.get("success") or "message_id" in result or "recipient_id" in result or "thread_id" in result else "failed"
         await log_message(
             account_id=account["id"],
             subscriber_id=sub_id,
@@ -617,7 +733,8 @@ async def handle_comment_event(value: dict, accounts: list):
             sent_message=final_message,
             status=status
         )
-        break  # Birinchi mos akkaunt topilsa to'xtatish
+        _poll_stats["dms_sent"] += 1
+        break
 
 
 async def handle_message_event(event: dict, accounts: list):
@@ -650,10 +767,9 @@ async def handle_message_event(event: dict, accounts: list):
         final_dm = apply_template(trigger["reply_message"])
 
         # DM javob yuborish
-        result = await send_dm(sender_id, final_dm, account["page_access_token"])
+        result = await _smart_send_dm(account, sender_id, final_dm)
 
-        # Log saqlash
-        status = "sent" if "message_id" in result or "recipient_id" in result else "failed"
+        status = "sent" if result.get("success") or "message_id" in result or "thread_id" in result else "failed"
         await log_message(
             account_id=account["id"],
             subscriber_id=sub_id,
@@ -663,6 +779,7 @@ async def handle_message_event(event: dict, accounts: list):
             sent_message=final_dm,
             status=status
         )
+        _poll_stats["dms_sent"] += 1
         break
 
 

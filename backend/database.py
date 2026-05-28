@@ -11,6 +11,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     page_id TEXT,
     username TEXT,
     page_access_token TEXT,
+    ig_username TEXT,
+    ig_session TEXT,
+    auth_type TEXT DEFAULT 'token',
     is_active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -111,17 +114,31 @@ async def get_accounts():
         await db.close()
 
 
-async def create_account(instagram_id: str, username: str, page_access_token: str, page_id: str = None):
+async def create_account(instagram_id: str, username: str, page_access_token: str = None,
+                         page_id: str = None, ig_username: str = None,
+                         ig_session: str = None, auth_type: str = "token"):
     db = await get_db()
     try:
         await db.execute(
-            "INSERT OR REPLACE INTO accounts (instagram_id, page_id, username, page_access_token) VALUES (?, ?, ?, ?)",
-            (instagram_id, page_id, username, page_access_token)
+            """INSERT OR REPLACE INTO accounts
+               (instagram_id, page_id, username, page_access_token, ig_username, ig_session, auth_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (instagram_id, page_id, username, page_access_token, ig_username, ig_session, auth_type)
         )
         await db.commit()
         cursor = await db.execute("SELECT * FROM accounts WHERE instagram_id = ?", (instagram_id,))
         row = await cursor.fetchone()
         return dict(row)
+    finally:
+        await db.close()
+
+
+async def update_account_session(account_id: int, ig_session: str):
+    """Sessiyani yangilash"""
+    db = await get_db()
+    try:
+        await db.execute("UPDATE accounts SET ig_session = ? WHERE id = ?", (ig_session, account_id))
+        await db.commit()
     finally:
         await db.close()
 
