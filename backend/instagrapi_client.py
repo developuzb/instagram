@@ -231,7 +231,8 @@ async def ig_get_user_medias(account: dict, amount: int = 12) -> list:
             medias = cl.user_medias(user_id, amount)
             return [
                 {
-                    "id": str(m.id),
+                    # pk — sof raqamli ID (id da "_userid" suffiksi bo'lishi mumkin)
+                    "id": str(m.pk),
                     "shortcode": m.code,
                     "timestamp": m.taken_at.isoformat() if m.taken_at else "",
                     "media_type": m.media_type,
@@ -254,7 +255,9 @@ async def ig_get_comments(account: dict, media_id: str, amount: int = 20) -> lis
 
     def _get():
         try:
-            comments = cl.media_comments(int(media_id), amount)
+            # "3901773621050688160_49325836298" formatini tozalash — faqat raqam kerak
+            numeric_id = str(media_id).split("_")[0]
+            comments = cl.media_comments(int(numeric_id), amount)
             return [
                 {
                     "id": str(c.pk),
