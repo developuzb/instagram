@@ -18,7 +18,14 @@ async def _get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         import asyncpg
-        _pg_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        import ssl as _ssl
+        # Supabase va boshqa cloud PG SSL talab qiladi
+        ctx = _ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = _ssl.CERT_NONE
+        _pg_pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=1, max_size=5, ssl=ctx
+        )
     return _pg_pool
 
 
@@ -49,8 +56,7 @@ async def _pg_init():
                 match_all INTEGER DEFAULT 0,
                 trigger_type TEXT DEFAULT 'comment',
                 trigger_count INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT (NOW()::TEXT),
-                FOREIGN KEY (account_id) REFERENCES accounts(id)
+                created_at TEXT DEFAULT (NOW()::TEXT)
             )
         """)
         await conn.execute("""
@@ -62,8 +68,7 @@ async def _pg_init():
                 post_url TEXT,
                 caption TEXT,
                 is_monitoring INTEGER DEFAULT 1,
-                created_at TEXT DEFAULT (NOW()::TEXT),
-                FOREIGN KEY (account_id) REFERENCES accounts(id)
+                created_at TEXT DEFAULT (NOW()::TEXT)
             )
         """)
         await conn.execute("""
@@ -75,8 +80,7 @@ async def _pg_init():
                 first_interaction TEXT DEFAULT (NOW()::TEXT),
                 last_interaction TEXT DEFAULT (NOW()::TEXT),
                 message_count INTEGER DEFAULT 0,
-                UNIQUE(account_id, instagram_user_id),
-                FOREIGN KEY (account_id) REFERENCES accounts(id)
+                UNIQUE(account_id, instagram_user_id)
             )
         """)
         await conn.execute("""
@@ -89,8 +93,7 @@ async def _pg_init():
                 comment_text TEXT,
                 sent_message TEXT,
                 status TEXT DEFAULT 'sent',
-                created_at TEXT DEFAULT (NOW()::TEXT),
-                FOREIGN KEY (account_id) REFERENCES accounts(id)
+                created_at TEXT DEFAULT (NOW()::TEXT)
             )
         """)
         await conn.execute("""
@@ -214,7 +217,13 @@ async def get_db():
 
 async def init_db():
     if DATABASE_URL:
-        await _pg_init()
+        try:
+            await _pg_init()
+        except Exception as e:
+            print(f"⚠️ PostgreSQL ulanmadi ({e}), SQLite ga o'tilmoqda")
+            global DATABASE_URL
+            DATABASE_URL = ""
+            await _sqlite_init()
     else:
         await _sqlite_init()
 
