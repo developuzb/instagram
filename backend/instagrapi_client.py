@@ -137,8 +137,10 @@ async def ig_send_dm(account: dict, recipient_ig_id: str, text: str) -> dict:
 
     def _send():
         try:
-            thread = cl.direct_send(text, user_ids=[int(recipient_ig_id)])
-            return {"success": True, "thread_id": str(thread.id)}
+            result = cl.direct_send(text, user_ids=[int(recipient_ig_id)])
+            # instagrapi 1.x va 2.x uchun id olish
+            rid = getattr(result, "id", None) or getattr(result, "thread_id", None) or str(result)
+            return {"success": True, "thread_id": str(rid)}
         except Exception as e:
             return {"error": str(e)}
 
